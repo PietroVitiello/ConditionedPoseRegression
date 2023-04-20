@@ -60,9 +60,6 @@ def parse_args():
         '-lr', '--learning_rate', type=float, default=None, required=False,
         help='The starting learning rate')
     parser.add_argument(
-        '-epochs', '--max_epochs', type=int, default=10000, required=False,
-        help='Maximum number of epochs the model should run for')
-    parser.add_argument(
         '-optim', '--optimizer_name', type=str, default='adamw', required=False,
         help='Name of the chosen optimizer')
     parser.add_argument(
@@ -131,7 +128,7 @@ def main():
         args.batch_size,
         args.optimizer_name,
         args.scheduler_name,
-        args.do_warmup,
+        True,
         args.name,
         pretrained_ckpt=args.ckpt_path,
         profiler=profiler,
