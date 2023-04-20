@@ -122,7 +122,7 @@ def main():
     # lightning module
     profiler = build_profiler(args.profiler_name)
     model = PL_Model(
-        args.model,
+        args.model_name,
         args.learning_rate,
         args.epochs,
         args.batch_size,
