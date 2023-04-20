@@ -124,7 +124,7 @@ def main():
     model = PL_Model(
         args.model_name,
         args.learning_rate,
-        args.epochs,
+        args.max_epochs,
         args.batch_size,
         args.optimizer_name,
         args.scheduler_name,
