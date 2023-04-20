@@ -20,14 +20,6 @@ from torch.utils.data import (
     random_split
 )
 
-from src.utils.augment import build_augmentor
-from src.utils.dataloader import get_local_split
-from src.utils.misc import tqdm_joblib
-from src.utils import comm
-from src.datasets.megadepth import MegaDepthDataset
-from src.datasets.scannet import ScanNetDataset
-from src.datasets.sampler import RandomConcatSampler
-
 from .blender_dataset import BlenderDataset
 
 
@@ -36,22 +28,15 @@ class BlenderDataModule(pl.LightningDataModule):
     For distributed training, each training process is assgined
     only a part of the training scenes to reduce memory overhead.
     """
-    def __init__(self, args, config,
-                 train_split: float = 0.9996):
+    def __init__(self, args,
+                 train_split: float = 0.8):
         super().__init__()
 
         # 2. dataset config
         # general options
-        self.min_overlap_score_test = config.DATASET.MIN_OVERLAP_SCORE_TEST  # 0.4, omit data with overlap_score < min_overlap_score
-        self.min_overlap_score_train = config.DATASET.MIN_OVERLAP_SCORE_TRAIN
-        self.augment_fn = build_augmentor(config.DATASET.AUGMENTATION_TYPE)  # None, options: [None, 'dark', 'mobile']
-
-        # MegaDepth options
-        self.mgdpt_img_resize = config.DATASET.MGDPT_IMG_RESIZE  # 840
-        self.mgdpt_img_pad = config.DATASET.MGDPT_IMG_PAD   # True
-        self.mgdpt_depth_pad = config.DATASET.MGDPT_DEPTH_PAD   # True
-        self.mgdpt_df = config.DATASET.MGDPT_DF  # 8
-        self.coarse_scale = 1 / config.ASPAN.RESOLUTION[0]  # 0.125. for training loftr.
+        # self.min_overlap_score_test = config.DATASET.MIN_OVERLAP_SCORE_TEST  # 0.4, omit data with overlap_score < min_overlap_score
+        # self.min_overlap_score_train = config.DATASET.MIN_OVERLAP_SCORE_TRAIN
+        # self.augment_fn = build_augmentor(config.DATASET.AUGMENTATION_TYPE)  # None, options: [None, 'dark', 'mobile']
 
         # 3.loader parameters
         self.train_loader_params = {
@@ -67,16 +52,11 @@ class BlenderDataModule(pl.LightningDataModule):
             'pin_memory': getattr(args, 'pin_memory', True)
         }
         
-        self.n_samples_per_subset = config.TRAINER.N_SAMPLES_PER_SUBSET
-        self.subset_replacement = config.TRAINER.SB_SUBSET_SAMPLE_REPLACEMENT
-        self.shuffle = config.TRAINER.SB_SUBSET_SHUFFLE
-        self.repeat = config.TRAINER.SB_REPEAT
-        
         # (optional) RandomSampler for debugging
 
         # misc configurations
         # self.parallel_load_data = getattr(args, 'parallel_load_data', False)
-        self.seed = config.TRAINER.SEED  # 66
+        self.seed = 66  # 66
 
         self.train_split = train_split
         self.full_dataset = BlenderDataset(args.use_masks, args.crop_margin, args.resize_modality,

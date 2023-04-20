@@ -376,7 +376,7 @@ def full_resize(crop_data: DataDict):
         ))[:,:-1]
 
     old_sizes = sizes
-    max_size = [320, 320] #[240, 320]
+    max_size = [256, 256] #[240, 320]
     sizes = np.round(sizes * np.min(np.array([max_size]) / sizes, keepdims=True, axis=1)).astype(np.int16)
 
     crop_data["rgb_0"] = np.zeros((3, *max_size), dtype=np.float32)

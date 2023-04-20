@@ -32,6 +32,29 @@ def cross_product(u, v):
 
     return out
 
+def encode_rotation_matrix(rot):
+    numpy_input = False
+    len_1_input = False
+
+    if isinstance(rot, np.ndarray):
+        numpy_input = True
+        rot = torch.tensor(rot)
+
+    if len(rot.shape) == 2:
+        len_1_input = True
+        rot = rot.unsqueeze(dim=0)
+
+    batch = rot.shape[0]
+    encoding = rot[:, :, :2].permute(0, 2, 1).contiguous().view(batch, -1)
+
+    if len_1_input:
+        encoding = encoding.squeeze(0)
+
+    if numpy_input:
+        encoding = encoding.cpu().detach().numpy()
+
+    return encoding
+
 def decode_rotation_encoding(encoding):
     numpy_input = False
     len_1_input = False

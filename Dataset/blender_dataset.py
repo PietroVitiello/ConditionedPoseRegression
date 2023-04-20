@@ -22,8 +22,9 @@ from torch.utils.data import Dataset
 import cv2
 
 from .globals import DATASET_DIR
-from Utils.data_utils import (rgb2gray, pose_inv, bbox_from_mask, crop, calculate_intrinsic_for_crop, 
-                get_keypoint_indices, plot_matches, estimate_cropped_correspondences, project_pointcloud)
+from Utils.data_utils import (pose_inv, bbox_from_mask, crop, calculate_intrinsic_for_crop, 
+                get_keypoint_indices, project_pointcloud)
+from Utils.training_utils import encode_rotation_matrix
 from .preprocessing import resize_img_pair
 
 # from .debug_utils import estimate_correspondences, estimate_correspondences_diff_intr
@@ -101,8 +102,6 @@ class BlenderDataset(Dataset):
         crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
             data["intrinsic"].copy(), top=bbox0[1], left=bbox0[0]
         )
-        print(data["intrinsic"])
-        print(crop_data["intrinsics_0"])
         crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
             data["intrinsic"].copy(), top=bbox1[1], left=bbox1[0]
         )
@@ -115,22 +114,22 @@ class BlenderDataset(Dataset):
         K = crop_data['intrinsics_0']
         depth = crop_data["depth_0"]
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
-        print(keypoints.shape)
+        # print(keypoints.shape)
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
-        crop_data['proj_0'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3))
-        print(crop_data['proj_0'][crop_data["seg_0"]])
+        crop_data['proj_0'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1)
+        # print(crop_data['proj_0'][crop_data["seg_0"]])
 
         K = crop_data['intrinsics_1']
         depth = crop_data["depth_1"]
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
-        crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3))
+        crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1)
 
     def get_rotation_label(self, data):
         T_C0 = pose_inv(data["T_WC_opencv"]) @ data["T_WO_frame_0"]
         T_1C = pose_inv(data["T_WO_frame_1"]) @ data["T_WC_opencv"]
         T_delta = T_C0 @ T_1C
-        return T_delta[:3, :3]
+        return encode_rotation_matrix(T_delta[:3, :3])
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -152,16 +151,16 @@ class BlenderDataset(Dataset):
         #     data = self.load_random_scene()
 
         crop_data["rgb_0"] *= crop_data["seg_0"]
-        crop_data["proj_0"] *= crop_data["seg_0"][:,:,None]
+        crop_data["proj_0"] *= crop_data["seg_0"]
         crop_data["rgb_1"] *= crop_data["seg_1"]
-        crop_data["proj_1"] *= crop_data["seg_1"][:,:,None]
+        crop_data["proj_1"] *= crop_data["seg_1"]
 
         data = {
             'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
             'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'T_0to1': R_delta,
+            'encoded_rot': R_delta,
             'dataset_name': 'Blender',
             'scene_id': self.idx,
             'pair_id': 0,

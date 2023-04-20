@@ -15,6 +15,7 @@ class ConvBlock(nn.Module):
             self.downsample = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def forward(self, x: torch.Tensor):
+        print("X:", x.shape)
         x = self.block(x)
         if self.downsample is not None:
             x = self.downsample(x)
@@ -38,13 +39,52 @@ class squeeze_excite(nn.Module):
         x = self.squeeze(x)
         x = self.excite(x)
         return torch.matmul(in_block, x)
-
-class ResNet_Block(nn.Module):
+    
+class ResNet_Block_0(nn.Module):
     def __init__(self, ch_in: int, ch_out:int, ch_between:int = None) -> None:
         super().__init__()
         ch_between = int(ch_out/2) if ch_between==None else ch_between
         self.block = nn.Sequential(
             ConvBlock(ch_in, ch_between, downsample=False),
+            ConvBlock(ch_between, ch_out, False)
+        )
+        self.residual_layer = nn.Sequential(
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
+            nn.BatchNorm2d(num_features=ch_out)
+        )
+        self.final_activation = nn.SELU(inplace=True)
+
+    def forward(self, x: torch.Tensor):
+        out = self.block(x)
+        res = self.residual_layer(x)
+        return self.final_activation(out + res)
+
+class ResNet_Block_2(nn.Module):
+    def __init__(self, ch_in: int, ch_out:int, ch_between:int = None) -> None:
+        super().__init__()
+        ch_between = int(ch_out/2) if ch_between==None else ch_between
+        self.block = nn.Sequential(
+            ConvBlock(ch_in, ch_between, downsample=False),
+            ConvBlock(ch_between, ch_out, True)
+        )
+        self.residual_layer = nn.Sequential(
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
+            nn.BatchNorm2d(num_features=ch_out),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+        )
+        self.final_activation = nn.SELU(inplace=True)
+
+    def forward(self, x: torch.Tensor):
+        out = self.block(x)
+        res = self.residual_layer(x)
+        return self.final_activation(out + res)
+    
+class ResNet_Block_4(nn.Module):
+    def __init__(self, ch_in: int, ch_out:int, ch_between:int = None) -> None:
+        super().__init__()
+        ch_between = int(ch_out/2) if ch_between==None else ch_between
+        self.block = nn.Sequential(
+            ConvBlock(ch_in, ch_between, downsample=True),
             ConvBlock(ch_between, ch_out, True)
         )
         self.residual_layer = nn.Sequential(

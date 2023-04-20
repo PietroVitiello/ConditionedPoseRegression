@@ -1,38 +1,37 @@
 from .transformer_blocks import CA_Block_LayerNormBefore as CA_Block, SA_Block_LayerNormBefore as SA_Block
-from CNN.resnet_blocks import ResNet_Block
+from .backbone import ResNet_Backbone
 
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 
-class Deep_ResNet_Transformer_2_RGB(nn.Module):
+class ResNet_Transformer(nn.Module):
 
     def __init__(self, rescale_255: bool = True) -> None:
-        super(Deep_ResNet_Transformer_2_RGB, self).__init__()
+        super(ResNet_Transformer, self).__init__()
         self.rescale_255 = rescale_255
 
-        self.encoder = nn.Sequential(
-            ResNet_Block(3, 128),
-            ResNet_Block(128, 256, 256)
-        )
+        self.encoder = ResNet_Backbone()
 
         self.pos_encoding = Parameter(
-            data = torch.randn(1,256,256),
+            data = torch.randn(1,1024,256),
             requires_grad = True
-        ) 
+        )
 
-        self.ca = CA_Block(seq_len=256, embed_dim=256, num_heads=4)
-        self.sa1 = SA_Block(seq_len=256, embed_dim=256, num_heads=4)
-        self.sa2 = SA_Block(seq_len=256, embed_dim=256, num_heads=4)
-        self.sa3 = SA_Block(seq_len=256, embed_dim=256, num_heads=4)
-        self.sa4 = SA_Block(seq_len=256, embed_dim=256, num_heads=4)
-        self.sa5 = SA_Block(seq_len=256, embed_dim=256, num_heads=4)
+        self.sa1a = SA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.sa1b = SA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.ca1a = CA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.ca1b = CA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.sa2a = SA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.sa2b = SA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.ca2 = CA_Block(seq_len=1024, embed_dim=256, num_heads=4)
+        self.sa3 = SA_Block(seq_len=1024, embed_dim=256, num_heads=4)
 
         self.mlp1 = nn.Sequential(nn.Linear(in_features=256, out_features=128, bias=True),
                                  nn.SELU(inplace=True))
         self.mlp2 = nn.Sequential(nn.Linear(in_features=128, out_features=64, bias=True),
                                  nn.SELU(inplace=True))
-        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=9, bias=True),
+        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=6, bias=True),
                                  nn.Identity(inplace=True))
 
         self._init_weights()
@@ -43,18 +42,20 @@ class Deep_ResNet_Transformer_2_RGB(nn.Module):
             if p.dim() > 1:
                 nn.init.xavier_uniform_(p)
 
-    def forward(self, live_images: torch.Tensor, bottleneck_images: torch.Tensor) -> torch.Tensor:
-        encoded_live = self.encoder(pre_process_rgb(live_images, size=256, rescale_255=self.rescale_255)).permute(0, 2, 3, 1).view(-1, 256, 256)
-        encoded_bottleneck = self.encoder(pre_process_rgb(bottleneck_images, size=256, rescale_255=self.rescale_255)).permute(0, 2, 3, 1).view(-1, 256, 256)
+    def forward(self, batch: dict) -> torch.Tensor:
+        encoded_live = self.encoder(batch["rgb0"], batch["vmap0"]).permute(0, 2, 3, 1).reshape(-1, 1024, 256)
+        encoded_bottleneck = self.encoder(batch["rgb1"], batch["vmap1"]).permute(0, 2, 3, 1).reshape(-1, 1024, 256)
         encoded_live = encoded_live + self.pos_encoding
         encoded_bottleneck = encoded_bottleneck + self.pos_encoding
 
-        attention = self.ca(encoded_live, encoded_bottleneck)
-        attention = self.sa1(attention)
-        attention = self.sa2(attention)
-        attention = self.sa3(attention)
-        attention = self.sa4(attention)
-        attention = self.sa5(attention)
+        attention_live =self.sa1a(encoded_live)
+        attention_bottleneck =self.sa1b(encoded_bottleneck)
+        attention_live2 =self.ca1a(attention_live, attention_bottleneck)
+        attention_bottleneck2 =self.ca1b(attention_bottleneck, attention_live)
+        attention_live2 =self.sa2a(attention_live2)
+        attention_bottleneck2 =self.sa2b(attention_bottleneck2)
+        attention =self.ca2(attention_live2, attention_bottleneck2)
+        attention =self.sa3(attention)
 
         out = torch.mean(attention, dim=1)
         out = self.mlp1(out)
@@ -64,15 +65,25 @@ class Deep_ResNet_Transformer_2_RGB(nn.Module):
 
 
 if __name__ == "__main__":
-    rand_live = torch.randint(low=0, high=255, size=(8, 3, 128, 128))
-    rand_bottle = torch.randint(low=0, high=255, size=(8, 3, 128, 128))
+    rand_live = torch.randint(low=0, high=255, size=(8, 3, 256, 256)).to(dtype=torch.float32)
+    rand_bottle = torch.randint(low=0, high=255, size=(8, 3, 256, 256)).to(dtype=torch.float32)
     # rand_live = torch.randint(low=-1, high=1, size=(8, 3, 128, 128))
     # rand_bottle = torch.randint(low=-1, high=1, size=(8, 3, 128, 128))
     # print(rand_live)
     # print(rand_bottle)
 
-    model = Deep_ResNet_Transformer_2_RGB()
-    out = model(rand_live, rand_bottle)
+    batch = {
+        "rgb0": rand_live,
+        "vmap0": rand_live,
+        "rgb1": rand_bottle,
+        "vmap1": rand_bottle,
+    }
+
+    model = ResNet_Transformer()
+    out = model(batch)
     print(out.shape)
-    print(out)
+    # print(out)
+
+
+
 

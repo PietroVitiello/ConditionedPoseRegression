@@ -11,13 +11,10 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.plugins import DDPPlugin
 
-from src.config.default import get_cfg_defaults
-from src.utils.misc import get_rank_zero_only_logger, setup_gpus
-from src.utils.profiler import build_profiler
-from fine_tuning.lightning_model import PL_ASpanFormer
-from fine_tuning.preprocessing import get_resize_modality_name
-
-from fine_tuning.datamodule import BlenderDataModule
+from Utils.misc import get_rank_zero_only_logger, setup_gpus
+from profiler import build_profiler
+from pl_model import PL_Model
+from Dataset.datamodule import BlenderDataModule
 
 loguru_logger = get_rank_zero_only_logger(loguru_logger)
 
@@ -30,8 +27,11 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
-        '-name', '--model_name', type=str, default=None, required=True,
-        help='options: [inference, pytorch], or leave it unset')
+        '-model', '--model_name', type=str, default="transformer", required=False,
+        help='Name of the model architecture we are training')
+    parser.add_argument(
+        '-name', '--run_name', type=str, default=None, required=True,
+        help='Name of the run')
     parser.add_argument(
         '-resize_m', '--resize_modality', type=int, default=5, required=False,
         help='Set the modality used to resize the images. Options: [0-5]')
@@ -59,6 +59,15 @@ def parse_args():
     parser.add_argument(
         '-lr', '--learning_rate', type=float, default=None, required=False,
         help='The starting learning rate')
+    parser.add_argument(
+        '-epochs', '--max_epochs', type=int, default=10000, required=False,
+        help='Maximum number of epochs the model should run for')
+    parser.add_argument(
+        '-optim', '--optimizer_name', type=str, default='adamw', required=False,
+        help='Name of the chosen optimizer')
+    parser.add_argument(
+        '-sched', '--scheduler_name', type=str, default='plateau', required=False,
+        help='Name of the chosen scheduler')
     parser.add_argument(
         '--pin_memory', type=lambda x: bool(strtobool(x)),
         nargs='?', default=False, help='whether loading data to pinned memory or not')
@@ -110,37 +119,34 @@ def main():
 
     # scale lr and warmup-step automatically
     args.gpus = _n_gpus = setup_gpus(args.gpus)
-    config.TRAINER.WORLD_SIZE = _n_gpus * args.num_nodes
-    config.TRAINER.TRUE_BATCH_SIZE = config.TRAINER.WORLD_SIZE * args.batch_size
-    _scaling = config.TRAINER.TRUE_BATCH_SIZE / config.TRAINER.CANONICAL_BS
-    config.TRAINER.SCALING = _scaling
-    config.TRAINER.WARMUP_STEP = math.floor(
-        config.TRAINER.WARMUP_STEP / _scaling)
-    if args.learning_rate is None:
-        config.TRAINER.TRUE_LR = config.TRAINER.CANONICAL_LR * _scaling
-    else:
-        config.TRAINER.TRUE_LR = args.learning_rate
-    
-    config.MODEL.NAME = args.model_name
-    config.MODEL.MASK = args.use_masks
-    config.MODEL.RESIZE = get_resize_modality_name(args.resize_modality)
-    config.TRAINER.MAX_EPOCHS = args.max_epochs
     if args.batch_size_val is None:
         args.batch_size_val = args.batch_size
 
     # lightning module
     profiler = build_profiler(args.profiler_name)
-    model = PL_ASpanFormer(config, pretrained_ckpt=args.ckpt_path, profiler=profiler, use_wandb=args.use_wandb)
+    model = PL_Model(
+        args.model,
+        args.learning_rate,
+        args.epochs,
+        args.batch_size,
+        args.optimizer_name,
+        args.scheduler_name,
+        args.do_warmup,
+        args.name,
+        pretrained_ckpt=args.ckpt_path,
+        profiler=profiler,
+        use_wandb=args.use_wandb
+    )
     loguru_logger.info(f"ASpanFormer LightningModule initialized!")
 
     # lightning data
     # data_module = MultiSceneDataModule(args, config)
-    data_module = BlenderDataModule(args, config)
+    data_module = BlenderDataModule(args)
     loguru_logger.info(f"ASpanFormer DataModule initialized!")
 
     # TensorBoard Logger
     logger = TensorBoardLogger(
-        save_dir='logs/tb_logs', name=args.exp_name, default_hp_metric=False)
+        save_dir='logs', name=args.exp_name, default_hp_metric=False)
     ckpt_dir = Path(logger.log_dir) / 'checkpoints'
 
     # Callbacks
