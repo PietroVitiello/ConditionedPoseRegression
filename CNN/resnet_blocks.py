@@ -15,7 +15,7 @@ class ConvBlock(nn.Module):
             self.downsample = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def forward(self, x: torch.Tensor):
-        print("X:", x.shape)
+        # print("X:", x.shape)
         x = self.block(x)
         if self.downsample is not None:
             x = self.downsample(x)
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     # print(rand_live)
     # print(rand_bottle)
 
-    model = ResNet()
+    model = ResNet_Block_4()
     out = model(rand_live, rand_bottle)
     print(out.shape)
     print(out)

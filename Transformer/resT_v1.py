@@ -61,6 +61,8 @@ class ResNet_Transformer(nn.Module):
         out = self.mlp1(out)
         out = self.mlp2(out)
         out = self.mlp3(out)
+
+        batch['pred'] = out
         return out
 
 

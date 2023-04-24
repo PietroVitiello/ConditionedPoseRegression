@@ -69,14 +69,14 @@ class PL_Model(pl.LightningModule):
                 name=run_name,
                 entity=entity,
                 reinit=True,
-                tags=["ASpanFormer"]
+                tags=["DirectRegression", model_name]
             )
             wandb.config = {
                 "learning_rate": lr,
                 "epochs": epochs,
                 "batch_size": bs
             }
-            wandb.watch(self.model, log='all', log_freq=1)
+            # wandb.watch(self.model, log='all', log_freq=1)
 
         self.train_step = 0
         self.val_step = 0
@@ -84,11 +84,6 @@ class PL_Model(pl.LightningModule):
 
     def wandb_log_epochs(self, data: dict, stage: str='train'):
         if stage == 'train':
-            loss_data = data["loss_scalars"]
-            flow_losses = {}
-            for loss_key in [key for key in loss_data.keys() if key.startswith("loss_flow_")]:
-                id = loss_key.split('_')[-1]
-                flow_losses.update({f"train_flow_loss_{id}": loss_data[loss_key]})
             wandb.log({"epoch": self.current_epoch,
                        "train_step": self.train_step,
                        "train_loss_stepwise": self.train_loss[-1],
@@ -99,10 +94,16 @@ class PL_Model(pl.LightningModule):
             self.train_step += 1
             
         elif stage == 'val':
+            print("\n\n\n")
+            print(self.train_loss)
+            try:
+                train_loss = np.mean(self.train_loss[1:])
+            except IndexError:
+                train_loss = self.train_loss
             data.update({
                 "epoch": self.current_epoch,
                 "val_step" : self.val_step,
-                "train_rotation_loss": np.mean(self.train_loss[1:]),
+                "train_rotation_loss": train_loss,
             })
             wandb.log(data)
             self.val_step += 1
@@ -143,8 +144,8 @@ class PL_Model(pl.LightningModule):
         optimizer.step(closure=optimizer_closure)
         optimizer.zero_grad()
         # update lr stepwise
-        scheduler = self.lr_schedulers()
-        scheduler.step()
+        # scheduler = self.lr_schedulers()
+        # scheduler.step()
     
     def _trainval_inference(self, batch):
         with self.profiler.profile("Compute pose estimation"):
@@ -169,7 +170,7 @@ class PL_Model(pl.LightningModule):
 
             if self.trainer.global_rank == 0:
                 if self.use_wandb:
-                    self.wandb_log_epochs(batch)
+                    self.wandb_log_epochs(dict())
 
             self.train_loss = self.train_loss[0]
                 
@@ -184,7 +185,9 @@ class PL_Model(pl.LightningModule):
         
     def validation_epoch_end(self, outputs):
         # handle multiple validation sets
-        multi_outputs = [outputs] if not isinstance(outputs[0], (list, tuple)) else outputs
+        # print('outputs', outputs)
+        multi_outputs = [output.detach().cpu() for output in outputs] # if not isinstance(outputs[0], (list, tuple)) else outputs
+        # print('outputs', multi_outputs)
         multi_outputs = np.array(multi_outputs)
 
         val_data = {"val_rotation_loss": np.mean(multi_outputs)}

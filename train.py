@@ -71,12 +71,12 @@ def parse_args():
     parser.add_argument(
         '--exp_name', type=str, default='trying_out', help='Name of the experiment and of checkpoint folder')
     
+    # parser.add_argument(
+    #     '--data_cfg_path', type=str, help='data config path', default="configs/data/scannet_trainval.py")
+    # parser.add_argument(
+    #     '--main_cfg_path', type=str, help='main config path', default="configs/aspan/indoor/aspan_train.py")
     parser.add_argument(
-        '--data_cfg_path', type=str, help='data config path', default="configs/data/scannet_trainval.py")
-    parser.add_argument(
-        '--main_cfg_path', type=str, help='main config path', default="configs/aspan/indoor/aspan_train.py")
-    parser.add_argument(
-        '--ckpt_path', type=str, default=Path("weights/indoor.ckpt"),
+        '--ckpt_path', type=str, default=None,
         help='pretrained checkpoint path, helpful for using a pre-trained coarse-only ASpanFormer')
     
     parser.add_argument(
@@ -119,6 +119,9 @@ def main():
     if args.batch_size_val is None:
         args.batch_size_val = args.batch_size
 
+    trainer_world_size = 1
+    trainer_gradient_clipping = 0.8
+
     # lightning module
     profiler = build_profiler(args.profiler_name)
     model = PL_Model(
@@ -129,7 +132,7 @@ def main():
         args.optimizer_name,
         args.scheduler_name,
         True,
-        args.name,
+        args.run_name,
         pretrained_ckpt=args.ckpt_path,
         profiler=profiler,
         use_wandb=args.use_wandb
@@ -143,12 +146,12 @@ def main():
 
     # TensorBoard Logger
     logger = TensorBoardLogger(
-        save_dir='logs', name=args.exp_name, default_hp_metric=False)
+        save_dir='logs', name=args.run_name, default_hp_metric=False)
     ckpt_dir = Path(logger.log_dir) / 'checkpoints'
 
     # Callbacks
     # TODO: update ModelCheckpoint to monitor multiple metrics
-    training_validation_interval = 7000
+    training_validation_interval = 1 #7000
     train_w_loss_callback = ModelCheckpoint(monitor='training_window_loss', verbose=True, save_top_k=3, mode='min',
                                             save_last=True,
                                             every_n_train_steps=150,
@@ -164,31 +167,26 @@ def main():
                                        every_n_train_steps=training_validation_interval,
                                        dirpath=str(ckpt_dir),
                                        filename='{epoch}-{val_loss:.4f}')
-    val_auc_callback = ModelCheckpoint(monitor='auc@10', verbose=True, save_top_k=3, mode='max',
-                                       save_last=False,
-                                       every_n_val_epochs=1,
-                                       dirpath=str(ckpt_dir),
-                                       filename='{epoch}-{auc@5:.4f}-{auc@10:.4f}-{auc@20:.4f}')
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
     callbacks = [lr_monitor]
     if not args.disable_ckpt:
         # training
         callbacks.append(train_w_loss_callback)
-        callbacks.append(val_loss_callback)
         # validation
-        callbacks.append(val_auc_callback)
+        callbacks.append(val_loss_callback)
+        # callbacks.append(val_auc_callback)
 
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
         args,
         plugins=DDPPlugin(find_unused_parameters=False,
                           num_nodes=args.num_nodes,
-                          sync_batchnorm=config.TRAINER.WORLD_SIZE > 0),
-        gradient_clip_val=config.TRAINER.GRADIENT_CLIPPING,
+                          sync_batchnorm=trainer_world_size > 0),
+        gradient_clip_val=trainer_gradient_clipping,
         callbacks=callbacks,
         logger=logger,
-        sync_batchnorm=config.TRAINER.WORLD_SIZE > 0,
+        sync_batchnorm=trainer_world_size > 0,
         replace_sampler_ddp=False,  # use custom sampler
         reload_dataloaders_every_epoch=False,  # avoid repeated samples!
         weights_summary='full',

@@ -50,15 +50,15 @@ class BlenderDataset(Dataset):
 
     def __len__(self):
         return len(np.sort(glob.glob(os.path.join(self.dataset_dir, 'scene_*'))))
-        # return len(next(os.walk(self.dataset_dir))[1])
 
     def load_scene(self, scene_dir) -> dict:
         scene_filename = scene_dir + '.msgpack'
         with open(scene_filename, "rb") as data_file:
             byte_data = data_file.read()
             data: dict = msgpack.unpackb(byte_data)
-        for k in data.keys():
-            print(k)
+
+        # for k in data.keys():
+        #     print(k)
 
         # print(data["colors"].shape)
         # print(data["depth"].shape)
@@ -116,20 +116,20 @@ class BlenderDataset(Dataset):
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
         # print(keypoints.shape)
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
-        crop_data['proj_0'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1)
+        crop_data['proj_0'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
         # print(crop_data['proj_0'][crop_data["seg_0"]])
 
         K = crop_data['intrinsics_1']
         depth = crop_data["depth_1"]
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
-        crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1)
+        crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
 
     def get_rotation_label(self, data):
         T_C0 = pose_inv(data["T_WC_opencv"]) @ data["T_WO_frame_0"]
         T_1C = pose_inv(data["T_WO_frame_1"]) @ data["T_WC_opencv"]
         T_delta = T_C0 @ T_1C
-        return encode_rotation_matrix(T_delta[:3, :3])
+        return encode_rotation_matrix(T_delta[:3, :3]).astype(np.float32)
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -160,7 +160,7 @@ class BlenderDataset(Dataset):
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
             'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'encoded_rot': R_delta,
+            'label': R_delta,
             'dataset_name': 'Blender',
             'scene_id': self.idx,
             'pair_id': 0,
@@ -175,18 +175,18 @@ if __name__ == "__main__":
 
     print(f"\nThe dataset length is: {len(dataset)}")
 
-    while True:
-        for point in dataset:
-            print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
+    # while True:
+    #     for point in dataset:
+    #         print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
 
-    # for point in dataset:
-    #     print("\n")
-    #     for key in point.keys():
-    #         if isinstance(point[key], np.ndarray):
-    #             tp = point[key].dtype
-    #         else:
-    #             tp = type(point[key])
-    #         print(f"{key}: {tp}")
+    for point in dataset:
+        print("\n")
+        for key in point.keys():
+            if isinstance(point[key], np.ndarray):
+                tp = point[key].dtype
+            else:
+                tp = type(point[key])
+            print(f"{key}: {tp}")
 
     dataset[2]
 

@@ -21,11 +21,12 @@ def build_scheduler(name, optimizer):
             'frequency': x, (optional)
         }
     """
-    scheduler = {'interval': 'epoch'}
+    scheduler = {'interval': 'step'}
 
     if name == "plateau":
         scheduler.update(
-            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.85, patience=10, min_lr=1e-6, verbose=True)})
+            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.85, patience=10, min_lr=1e-6, verbose=True),
+             'monitor': 'training_window_loss'})
     elif name == 'MultiStepLR':
         scheduler.update(
             {'scheduler': MultiStepLR(optimizer, [3, 6, 9, 12], gamma=0.5)})
