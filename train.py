@@ -151,7 +151,7 @@ def main():
 
     # Callbacks
     # TODO: update ModelCheckpoint to monitor multiple metrics
-    training_validation_interval = 1 #7000
+    training_validation_interval = 7000
     train_w_loss_callback = ModelCheckpoint(monitor='training_window_loss', verbose=True, save_top_k=3, mode='min',
                                             save_last=True,
                                             every_n_train_steps=150,
