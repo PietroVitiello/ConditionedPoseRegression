@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 from losses import rotation_loss
 from optimizers import build_optimizer, build_scheduler
 from profiler import PassThroughProfiler
+from Utils.training_utils import calculate_rot_error
 
 from Transformer.resT_v1 import ResNet_Transformer
 
@@ -88,14 +89,11 @@ class PL_Model(pl.LightningModule):
                        "train_step": self.train_step,
                        "train_loss_stepwise": self.train_loss[-1],
                        "training_window_loss": np.mean(self.train_loss[1:]),
-                       
                        "lr": self.optimizer.param_groups[0]["lr"],
                     })
             self.train_step += 1
             
         elif stage == 'val':
-            print("\n\n\n")
-            print(self.train_loss)
             try:
                 train_loss = np.mean(self.train_loss[1:])
             except IndexError:
@@ -180,17 +178,21 @@ class PL_Model(pl.LightningModule):
         outputs.clear()
     
     def validation_step(self, batch, batch_idx):
-        self._trainval_inference(batch)       
-        return batch['loss']
+        self._trainval_inference(batch)
+        calculate_rot_error(batch)
+        return [batch['loss'].detach().cpu(),
+                batch['ori_error']]
         
     def validation_epoch_end(self, outputs):
         # handle multiple validation sets
         # print('outputs', outputs)
-        multi_outputs = [output.detach().cpu() for output in outputs] # if not isinstance(outputs[0], (list, tuple)) else outputs
-        # print('outputs', multi_outputs)
-        multi_outputs = np.array(multi_outputs)
+        multi_outputs = np.array([np.array(output) for output in outputs])
+        # print(multi_outputs)
+        losses = multi_outputs[:,0]
+        ori_errors = multi_outputs[:,1]
 
-        val_data = {"val_rotation_loss": np.mean(multi_outputs)}
+        val_data = {"val_rotation_loss": np.mean(losses),
+                    "val_ori_errors": np.mean(ori_errors)}
 
         self.log("val_loss", val_data["val_rotation_loss"])                            
         if self.trainer.global_rank == 0 and self.use_wandb:

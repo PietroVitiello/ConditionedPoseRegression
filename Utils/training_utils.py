@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 
+from .se3_tools import so3_log
+
 def normalize_vector(v, return_mag=False):
     _device = v.device
     batch = v.shape[0]
@@ -145,3 +147,39 @@ def decode_rotation_encoding(encoding):
         rots = rots.to(torch.float32)
 
     return rots
+
+def calculate_error_between_poses(pose_pred, pose_target):
+    pos_error = np.linalg.norm(pose_pred[:3, 3] - pose_target[:3, 3])
+
+    # camera_pose_in_eef_gt[:3, :3] = delta_R @ camera_pose_in_eef_pred[:3, :3]
+    # delta_R = pose_target[:3, :3] @ pose_inv(pose_pred)[:3, :3]
+    delta_R = pose_pred[:3, :3].T @ pose_target[:3, :3]
+
+    rotvec = so3_log(delta_R)
+    ori_error = np.linalg.norm(rotvec)  # Angle from the axis-angle representation
+
+    return pos_error, ori_error * 180 / np.pi
+
+def calculate_error_between_poses_batch(poses_pred, poses_target):
+    pos_error = 0
+    ori_error = 0
+    for i in range(len(poses_pred)):
+        _pos_error, _ori_error = calculate_error_between_poses(poses_pred[i].detach().cpu().numpy(),
+                                                               poses_target[i].detach().cpu().numpy())
+
+        pos_error += _pos_error
+        ori_error += _ori_error
+
+    return pos_error / len(poses_pred), ori_error / len(poses_pred)
+
+def calculate_rot_error(batch: dict):
+    ori_error = 0
+    pred = decode_rotation_encoding(batch['pred'].detach().cpu())
+    target = decode_rotation_encoding(batch['label'].detach().cpu())
+    for i in range(len(pred)):
+        delta_R = pred[i][:3, :3].T @ target[i][:3, :3]
+        rotvec = so3_log(delta_R)
+        _ori_error = np.rad2deg(np.linalg.norm(rotvec))
+        ori_error += _ori_error
+
+    batch.update({'ori_error': ori_error / len(pred)})
