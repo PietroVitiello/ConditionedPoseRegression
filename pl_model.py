@@ -15,6 +15,7 @@ from profiler import PassThroughProfiler
 from Utils.training_utils import calculate_rot_error
 
 from Transformer.resT_v1 import ResNet_Transformer
+from CNN.full_resnet_v1 import ResNet
 
 
 class PL_Model(pl.LightningModule):
@@ -89,6 +90,7 @@ class PL_Model(pl.LightningModule):
                        "train_step": self.train_step,
                        "train_loss_stepwise": self.train_loss[-1],
                        "training_window_loss": np.mean(self.train_loss[1:]),
+                       "train_ori_error": data["ori_error"],
                        "lr": self.optimizer.param_groups[0]["lr"],
                     })
             self.train_step += 1
@@ -111,7 +113,7 @@ class PL_Model(pl.LightningModule):
 
     def model_choice(self, model_name):
         if model_name == "resnet":
-            return 0
+            return ResNet()
         elif model_name == "transformer":
             return ResNet_Transformer()
         else:
@@ -166,9 +168,11 @@ class PL_Model(pl.LightningModule):
             self.log("training_window_loss", window_average_loss)
             self.log("training_last_loss", self.train_loss[-1])
 
+            calculate_rot_error(batch)
+
             if self.trainer.global_rank == 0:
                 if self.use_wandb:
-                    self.wandb_log_epochs(dict())
+                    self.wandb_log_epochs({"ori_error": batch['ori_error']})
 
             self.train_loss = self.train_loss[0]
                 
@@ -192,7 +196,7 @@ class PL_Model(pl.LightningModule):
         ori_errors = multi_outputs[:,1]
 
         val_data = {"val_rotation_loss": np.mean(losses),
-                    "val_ori_errors": np.mean(ori_errors)}
+                    "val_ori_error": np.mean(ori_errors)}
 
         self.log("val_loss", val_data["val_rotation_loss"])                            
         if self.trainer.global_rank == 0 and self.use_wandb:

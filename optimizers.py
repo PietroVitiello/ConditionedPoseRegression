@@ -25,14 +25,14 @@ def build_scheduler(name, optimizer):
 
     if name == "plateau":
         scheduler.update(
-            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.85, patience=10, min_lr=1e-6, verbose=True),
+            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.85, patience=100, min_lr=1e-6, verbose=True),
              'monitor': 'training_window_loss'})
     elif name == 'MultiStepLR':
         scheduler.update(
             {'scheduler': MultiStepLR(optimizer, [3, 6, 9, 12], gamma=0.5)})
     elif name == 'CosineAnnealing':
         scheduler.update(
-            {'scheduler': CosineAnnealingLR(optimizer, 30)})
+            {'scheduler': CosineAnnealingLR(optimizer, 1000, eta_min=1e-6)})
     elif name == 'ExponentialLR':
         scheduler.update(
             {'scheduler': ExponentialLR(optimizer, 0.999992)})
