@@ -21,11 +21,11 @@ from PIL import Image
 from torch.utils.data import Dataset
 import cv2
 
-from .globals import DATASET_DIR
+from Dataset.globals import DATASET_DIR
+from Dataset.preprocessing import resize_img_pair
 from Utils.data_utils import (pose_inv, bbox_from_mask, crop, calculate_intrinsic_for_crop, 
                 get_keypoint_indices, project_pointcloud)
 from Utils.training_utils import encode_rotation_matrix
-from .preprocessing import resize_img_pair
 
 # from .debug_utils import estimate_correspondences, estimate_correspondences_diff_intr
 
@@ -138,22 +138,50 @@ class BlenderDataset(Dataset):
         if self.idx >= len(self):
             raise IndexError
         
-        # Get all the data for current scene
-        scene_dir = os.path.join(self.dataset_dir, f"scene_{str(self.idx).zfill(7)}")
-        data = self.load_scene(scene_dir)
+        # scene_dir = os.path.join(self.dataset_dir, f"scene_{str(self.idx).zfill(7)}")
+        # data = self.load_scene(scene_dir)
 
-        # try:
-        crop_data = self.crop_object(data)        
-        self.project_pointclouds(crop_data)
-        R_delta = self.get_rotation_label(data)
-        # except Exception as e:
-        #     logger.warning(f"The following exception was found: \n{e}")
-        #     data = self.load_random_scene()
+        is_valid_scene = False
+        while not is_valid_scene:
+            try:
+                # Get all the data for current scene
+                scene_dir = os.path.join(self.dataset_dir, f"scene_{str(self.idx).zfill(7)}")
+                data = self.load_scene(scene_dir)
+                crop_data = self.crop_object(data)        
+                self.project_pointclouds(crop_data)
+                R_delta = self.get_rotation_label(data)
+                is_valid_scene = True
+            except Exception as e:
+                logger.warning(f"[SCENE {self.idx}] The following exception was found: \n{e}")
+                # data = self.load_random_scene()
+                self.idx = np.random.randint(0, len(self))
 
         crop_data["rgb_0"] *= crop_data["seg_0"]
         crop_data["proj_0"] *= crop_data["seg_0"]
         crop_data["rgb_1"] *= crop_data["seg_1"]
         crop_data["proj_1"] *= crop_data["seg_1"]
+
+        # check_dim = 2
+        # proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
+        # proj0 /= np.max(proj0)*255
+        # proj0 *= crop_data["seg_0"][:,:,None]
+        # proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
+        # proj1 /= np.max(proj1)*255
+        # proj1 *= crop_data["seg_1"][:,:,None]
+
+        # # plt.figure()
+        # # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
+        # # plt.figure()
+        # # plt.imshow(crop_data["rgb_1"].transpose(1,2,0))
+        # plt.figure()
+        # print("min 0: ", np.min(proj0))
+        # print("min 1: ", np.min(proj1))
+        # print("max 0: ", np.max(proj0))
+        # print("max 1: ", np.max(proj1))
+        # plt.imshow(proj0)
+        # plt.figure()
+        # plt.imshow(proj1)
+        # plt.show()
 
         data = {
             'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)

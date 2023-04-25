@@ -13,7 +13,7 @@ ssh-add ~/.ssh/git_key
 # Get Job details
 echo "Job ID: $PBS_JOBID"
 id="${PBS_JOBID%.*}"
-complete_filename=train_transformer.pbs
+complete_filename=cosine_train_transformer.pbs
 filename=${complete_filename%.*}
 new_dir="${filename}_${id}"
 
@@ -28,5 +28,5 @@ mv outputs/${new_dir}/${complete_filename}.o${id} outputs/${new_dir}/o
 
 # Move to the correct directory
 cd ..
-python train.py -name direct_transformer1 -bs 6 -nw 2 -lr 9e-5 --gpus 1 --max_epochs 1000000 -wandb
+python train.py -name direct_transformer_cos_1 -sched CosineAnnealing -bs 6 -nw 2 -lr 7e-5 --gpus 1 --max_epochs 1000000 -wandb
 echo "Done"

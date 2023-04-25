@@ -1,5 +1,5 @@
-from .transformer_blocks import CA_Block_LayerNormBefore as CA_Block, SA_Block_LayerNormBefore as SA_Block
-from .backbone import ResNet_Backbone
+from Transformer.transformer_blocks import CA_Block_LayerNormBefore as CA_Block, SA_Block_LayerNormBefore as SA_Block
+from CNN.backbone import ResNet_Backbone
 
 import torch
 import torch.nn as nn
@@ -7,9 +7,8 @@ from torch.nn.parameter import Parameter
 
 class ResNet_Transformer(nn.Module):
 
-    def __init__(self, rescale_255: bool = True) -> None:
+    def __init__(self) -> None:
         super(ResNet_Transformer, self).__init__()
-        self.rescale_255 = rescale_255
 
         self.encoder = ResNet_Backbone()
 
@@ -82,6 +81,7 @@ if __name__ == "__main__":
     }
 
     model = ResNet_Transformer()
+    print("Parameter cound: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
     out = model(batch)
     print(out.shape)
     # print(out)

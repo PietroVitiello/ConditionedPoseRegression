@@ -20,7 +20,7 @@ from torch.utils.data import (
     random_split
 )
 
-from .blender_dataset import BlenderDataset
+from Dataset.blender_dataset import BlenderDataset
 
 
 class BlenderDataModule(pl.LightningDataModule):
@@ -29,7 +29,7 @@ class BlenderDataModule(pl.LightningDataModule):
     only a part of the training scenes to reduce memory overhead.
     """
     def __init__(self, args,
-                 train_split: float = 0.8):
+                 train_split: float = 0.98):
         super().__init__()
 
         # 2. dataset config
