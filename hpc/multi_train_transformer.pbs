@@ -28,5 +28,5 @@ mv outputs/${new_dir}/${complete_filename}.o${id} outputs/${new_dir}/o
 
 # Move to the correct directory
 cd ..
-python train.py -name multi_direct_transformer1 -bs 6 -nw 2 -lr 9e-5 --gpus 5 --max_epochs 1000000 -wandb
+python train.py -name multi_direct_transformer1 -bs 16 -nw 2 -lr 9e-5 --gpus 5 --max_epochs 1000000 -wandb
 echo "Done"
