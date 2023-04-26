@@ -151,7 +151,7 @@ def main():
 
     # Callbacks
     # TODO: update ModelCheckpoint to monitor multiple metrics
-    # training_validation_interval = 1000
+    training_validation_interval = 3000
     train_w_loss_callback = ModelCheckpoint(monitor='training_window_loss', verbose=True, save_top_k=3, mode='min',
                                             save_last=True,
                                             every_n_train_steps=150,
@@ -164,7 +164,7 @@ def main():
     #                                            filename='{epoch}-{step}-{training_last_loss:.4f}')
     val_loss_callback = ModelCheckpoint(monitor='val_loss', verbose=True, save_top_k=3, mode='min',
                                        save_last=True,
-                                    #    every_n_train_steps=training_validation_interval,
+                                       every_n_train_steps=training_validation_interval,
                                        dirpath=str(ckpt_dir),
                                        filename='{epoch}-{val_loss:.4f}')
 
@@ -191,7 +191,7 @@ def main():
         reload_dataloaders_every_epoch=False,  # avoid repeated samples!
         weights_summary='full',
         profiler=profiler,
-        # val_check_interval=training_validation_interval
+        val_check_interval=training_validation_interval
         )
     loguru_logger.info(f"Trainer initialized!")
     loguru_logger.info(f"Start training!")
