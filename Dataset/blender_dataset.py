@@ -64,12 +64,24 @@ class BlenderDataset(Dataset):
         # print(data["depth"].shape)
         # print(data["colors"])
         # print(data["depth"])
+
+        data["depth"][0] = data["depth"][0] * (data["depth"][0] < 5.0)
+        data["depth"][1] = data["depth"][1] * (data["depth"][1] < 5.0)
+
+        # print(data["depth"][0].dtype)
+        # # print(data["depth"][0])
+        # print(np.min(data["depth"][0]), np.max(data["depth"][0]))
+        # plt.figure()
+        # plt.imshow(data["colors"][0])
+        # plt.figure()
+        # plt.imshow(data["depth"][0])
+        # plt.show()
         
         data.update({
             "rgb_0": data["colors"][0],
             "rgb_1": data["colors"][1],
-            "depth_0": data["depth"][0] * 1000,
-            "depth_1": data["depth"][1] * 1000
+            "depth_0": data["depth"][0] * data["cp_main_obj_segmaps"][0],
+            "depth_1": data["depth"][1] * data["cp_main_obj_segmaps"][1]
         })
         data.pop("colors")
         data.pop("depth")
@@ -115,14 +127,14 @@ class BlenderDataset(Dataset):
         depth = crop_data["depth_0"]
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
         # print(keypoints.shape)
-        projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
+        projected_keypoints = project_pointcloud(keypoints, depth, K, 'm')
         crop_data['proj_0'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
         # print(crop_data['proj_0'][crop_data["seg_0"]])
 
         K = crop_data['intrinsics_1']
         depth = crop_data["depth_1"]
         keypoints = get_keypoint_indices((depth.shape[1], depth.shape[0]))
-        projected_keypoints = project_pointcloud(keypoints, depth, K, 'mm')
+        projected_keypoints = project_pointcloud(keypoints, depth, K, 'm')
         crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
 
     def get_rotation_label(self, data):
@@ -161,6 +173,24 @@ class BlenderDataset(Dataset):
         crop_data["rgb_1"] *= crop_data["seg_1"]
         crop_data["proj_1"] *= crop_data["seg_1"]
 
+
+
+                
+
+
+
+
+
+
+        # import sys
+        # np.set_printoptions(threshold=sys.maxsize)
+
+        # print(crop_data["proj_0"][0][crop_data["proj_0"][0] != 0])
+        # print("\n\n\n\n")
+        # print(crop_data["proj_0"][1][crop_data["proj_0"][0] != 0])
+        # print("\n\n\n\n")
+        # print(crop_data["proj_0"][2][crop_data["proj_0"][0] != 0])
+
         # check_dim = 2
         # proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
         # proj0 /= np.max(proj0)*255
@@ -183,6 +213,8 @@ class BlenderDataset(Dataset):
         # plt.imshow(proj1)
         # plt.show()
 
+
+
         data = {
             'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
             'vmap0': crop_data["proj_0"],   # (h, w)
@@ -195,6 +227,12 @@ class BlenderDataset(Dataset):
             'pair_names': (f"scene_{self.idx}_0",
                            f"scene_{self.idx}_1")
         }
+
+        # data.update({
+        #     'd0': crop_data['depth_0'] * crop_data["seg_0"],
+        #     'd1': crop_data['depth_1'] * crop_data["seg_1"],
+        # })
+
         return data
 
 if __name__ == "__main__":
@@ -207,14 +245,57 @@ if __name__ == "__main__":
     #     for point in dataset:
     #         print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
 
-    for point in dataset:
-        print("\n")
-        for key in point.keys():
-            if isinstance(point[key], np.ndarray):
-                tp = point[key].dtype
-            else:
-                tp = type(point[key])
-            print(f"{key}: {tp}")
+    # for point in dataset:
+    #     print("\n")
+    #     for key in point.keys():
+    #         if isinstance(point[key], np.ndarray):
+    #             tp = point[key].dtype
+    #         else:
+    #             tp = type(point[key])
+    #         print(f"{key}: {tp}")
+
+
+    # proj0s = np.zeros((1))
+    # proj1s = np.zeros((1))
+    # for i in range(200):
+    #     print(i)
+    #     data = dataset[i]
+    #     seg = data['d0'] != 0
+    #     # print(data['d0'].shape)
+    #     print(f"1: {np.min(data['d0'][seg])}, {np.max(data['d0'][seg])}")
+    #     proj0s = np.concatenate((proj0s, data['d0'][seg]))
+    #     seg = data['d1'] != 0
+    #     print(f"2: {np.min(data['d1'][seg])}, {np.max(data['d1'][seg])}\n")
+    #     proj1s = np.concatenate((proj1s, data['d1'][seg]))
+    # print("Done. The metrics are:")
+    # print(f"1x: {np.mean(proj0s, axis=0)} +/- {np.std(proj0s, axis=0)}")
+    # print(f"2x: {np.mean(proj1s, axis=0)} +/- {np.std(proj1s, axis=0)}")
+
+
+
+    proj0s = np.zeros((1,3))
+    proj1s = np.zeros((1,3))
+    for i in range(200):
+        print(i)
+        data = dataset[i]
+        seg = data['vmap0'][0] != 0
+        print(f"x: {np.min(data['vmap0'][0][seg, None])}, {np.max(data['vmap0'][0][seg, None])}")
+        print(f"y: {np.min(data['vmap0'][1][seg, None])}, {np.max(data['vmap0'][1][seg, None])}")
+        print(f"z: {np.min(data['vmap0'][2][seg, None])}, {np.max(data['vmap0'][2][seg, None])}\n")
+        proj_data = np.concatenate((data['vmap0'][0][seg, None], data['vmap0'][1][seg, None], data['vmap0'][2][seg, None]), axis=1)
+        proj0s = np.concatenate((proj0s, proj_data))
+        seg = data['vmap1'][0] != 0
+        proj_data = np.concatenate((data['vmap1'][0][seg, None], data['vmap1'][1][seg, None], data['vmap1'][2][seg, None]), axis=1)
+        proj1s = np.concatenate((proj1s, proj_data))
+    print("Done. The metrics are:")
+    print(f"1x: {np.mean(proj0s[1:,0], axis=0)} +/- {np.std(proj0s[1:,0], axis=0)}")
+    print(f"1y: {np.mean(proj0s[1:,1], axis=0)} +/- {np.std(proj0s[1:,1], axis=0)}")
+    print(f"1z: {np.mean(proj0s[1:,2], axis=0)} +/- {np.std(proj0s[1:,2], axis=0)}")
+
+    print(f"2x: {np.mean(proj1s[1:,0], axis=0)} +/- {np.std(proj1s[1:,0], axis=0)}")
+    print(f"2y: {np.mean(proj1s[1:,1], axis=0)} +/- {np.std(proj1s[1:,1], axis=0)}")
+    print(f"2z: {np.mean(proj1s[1:,2], axis=0)} +/- {np.std(proj1s[1:,2], axis=0)}")
+        
 
     dataset[2]
 
