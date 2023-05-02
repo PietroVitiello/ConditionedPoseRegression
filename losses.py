@@ -36,3 +36,30 @@ class rotation_loss():
     #     x_cosine = self.cos(x_pred, x_label)
     #     y_cosine = self.cos(y_pred, y_label)
     #     return x_cosine + y_cosine +2
+
+class rotvec_loss():
+    
+    def __init__(self, reduction: str = 'mean') -> None:
+        self.mse = nn.MSELoss(reduction=reduction)
+        self.cos = cosine_loss(reduction)
+
+    def get_rotvec_parameters(self, rotvec):
+        magnitude = torch.linalg.norm(rotvec)
+        axis = rotvec / magnitude
+        return magnitude, axis
+
+    def __call__(self, batch: dict):
+        pred = batch['pred']
+        label = batch['label']
+        mag_pred, axis_pred = self.get_rotvec_parameters(pred)
+        mag_label, axis_label = self.get_rotvec_parameters(label)
+        mag_loss = self.mse(mag_pred, mag_label)
+        axis_loss = self.cos(axis_pred, axis_label)
+        batch['loss'] = mag_loss + axis_loss + 1
+
+class cross_entropy_loss():
+    def __init__(self) -> None:
+        self.loss = nn.CrossEntropyLoss()
+
+    def __call__(self, batch: dict):
+        batch['loss'] = self.loss(batch['pred'], batch['label'])

@@ -43,7 +43,7 @@ ORIGINAL_INTRINSIC = np.array([[612.044, 0, 326.732],
 RENDERING_INTRINSIC = calculate_intrinsic_for_new_resolution(
     ORIGINAL_INTRINSIC, RENDERING_IMAGE_WIDTH, RENDERING_IMAGE_HEIGHT, ORIGINAL_IMAGE_WIDTH, ORIGINAL_IMAGE_HEIGHT)
 
-class BlenderDataset(Dataset):
+class BlenderDataset_1dof(Dataset):
 
     def __init__(self,
                  use_masks: bool = False,
@@ -124,18 +124,18 @@ class BlenderDataset(Dataset):
         crop_data["rgb_0"] = rgb0 / 255
         crop_data["rgb_1"] = rgb1 / 255
         
-        crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
-            RENDERING_INTRINSIC.copy(), top=bbox0[1], left=bbox0[0]
-        )
-        crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
-            RENDERING_INTRINSIC.copy(), top=bbox1[1], left=bbox1[0]
-        )
         # crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
-        #     data["intrinsic"].copy(), top=bbox0[1], left=bbox0[0]
+        #     RENDERING_INTRINSIC.copy(), top=bbox0[1], left=bbox0[0]
         # )
         # crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
-        #     data["intrinsic"].copy(), top=bbox1[1], left=bbox1[0]
+        #     RENDERING_INTRINSIC.copy(), top=bbox1[1], left=bbox1[0]
         # )
+        crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
+            data["intrinsic"].copy(), top=bbox0[1], left=bbox0[0]
+        )
+        crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
+            data["intrinsic"].copy(), top=bbox1[1], left=bbox1[0]
+        )
 
         resize_img_pair(crop_data, self.resize_modality)
 
@@ -156,13 +156,27 @@ class BlenderDataset(Dataset):
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'm')
         crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
 
-    def get_rotation_label(self, data):
-        T_C1 = pose_inv(data["T_WC_opencv"]) @ data["T_WO_frame_1"]
-        T_0C = pose_inv(data["T_WO_frame_0"]) @ data["T_WC_opencv"]
-        T_delta = T_C1 @ T_0C
-        # return encode_rotation_matrix(T_delta[:3, :3]).astype(np.float32), T_delta
-        # print(rot2rotvec(T_delta[:3, :3]).astype(np.float32))
-        return rot2rotvec(T_delta[:3, :3]).astype(np.float32), T_delta
+    def get_rotation(self, data):
+        T_WC = data["T_WC_opencv"]
+        T_CW = pose_inv(T_WC)
+        T_C1 = T_CW @ data["T_WO_frame_1"]
+        T_0C = pose_inv(data["T_WO_frame_0"]) @ T_WC
+        T_delta_cam = T_C1 @ T_0C
+        T_delta_base = T_WC @ T_delta_cam @ T_CW
+        rotvec = rot2rotvec(T_delta_base[:3, :3])
+        delta_magnitude = np.linalg.norm(rotvec)
+        axis = rotvec / delta_magnitude
+        z_axis = np.array([0,0,1])
+        if np.dot(z_axis, axis) < 0:
+            delta_magnitude *= -1
+        return delta_magnitude
+    
+    def get_rotation_label(self, angle):
+        angle += 45 #make sure the whole interval [-45, 45] is positive
+        class_index = angle // 0.45
+        class_labels = np.zeros((1, 200), dtype=np.float16)
+        class_labels[class_index] = 1.0
+        return class_labels
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -182,11 +196,9 @@ class BlenderDataset(Dataset):
                 data = self.load_scene(scene_dir)
                 crop_data = self.crop_object(data)        
                 self.project_pointclouds(crop_data)
-                encoded_R_delta, full_T_delta = self.get_rotation_label(data)
-                if calculate_rot_delta(full_T_delta[:3,:3]) < 35:
-                    is_valid_scene = True
-                else:
-                    self.idx = np.random.randint(0, len(self))
+                rot_magnitude = self.get_rotation(data)
+                assert rot_magnitude < 45, "The rotation magnitude is actually above 45 degrees"
+                rot_labels = self.get_rotation_label(rot_magnitude)
             except Exception as e:
                 logger.warning(f"[SCENE {self.idx}] The following exception was found: \n{e}")
                 # data = self.load_random_scene()
@@ -225,13 +237,13 @@ class BlenderDataset(Dataset):
         # print("\n\n\n\n")
         # print(crop_data["proj_0"][2][crop_data["proj_0"][0] != 0])
 
-        check_dim = 0
-        proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
-        proj0 /= np.max(proj0)*255
-        proj0 *= crop_data["seg_0"][:,:,None]
-        proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
-        proj1 /= np.max(proj1)*255
-        proj1 *= crop_data["seg_1"][:,:,None]
+        # check_dim = 0
+        # proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
+        # proj0 /= np.max(proj0)*255
+        # proj0 *= crop_data["seg_0"][:,:,None]
+        # proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
+        # proj1 /= np.max(proj1)*255
+        # proj1 *= crop_data["seg_1"][:,:,None]
 
         # # plt.figure()
         # # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
@@ -257,7 +269,7 @@ class BlenderDataset(Dataset):
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
             'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'label': encoded_R_delta,
+            'label': rot_labels,
             'dataset_name': 'Blender',
             'scene_id': self.idx,
             'pair_id': 0,
@@ -307,7 +319,7 @@ if __name__ == "__main__":
 
 
 
-    dataset = BlenderDataset(use_masks=True, resize_modality=5)
+    dataset = BlenderDataset_1dof(use_masks=True, resize_modality=5)
 
     print(f"\nThe dataset length is: {len(dataset)}")
 

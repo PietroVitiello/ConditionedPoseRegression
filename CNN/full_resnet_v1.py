@@ -17,7 +17,7 @@ class ResNet(nn.Module):
                                  nn.SELU(inplace=True))
         self.mlp2 = nn.Sequential(nn.Linear(in_features=128, out_features=64, bias=True),
                                  nn.SELU(inplace=True))
-        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=6, bias=True),
+        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=3, bias=True),
                                  nn.Identity(inplace=True))
 
         self._init_weights()
@@ -43,7 +43,7 @@ class ResNet(nn.Module):
 
         out = torch.concat((encoded_live, encoded_bottleneck), dim=1)
         out = self.fusion(out)
-        out = self.resnet(out).squeeze()
+        out = self.resnet(out).squeeze(2).squeeze(2)
         
         out = self.mlp1(out)
         out = self.mlp2(out)

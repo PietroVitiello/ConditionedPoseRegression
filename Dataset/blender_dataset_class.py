@@ -43,7 +43,7 @@ ORIGINAL_INTRINSIC = np.array([[612.044, 0, 326.732],
 RENDERING_INTRINSIC = calculate_intrinsic_for_new_resolution(
     ORIGINAL_INTRINSIC, RENDERING_IMAGE_WIDTH, RENDERING_IMAGE_HEIGHT, ORIGINAL_IMAGE_WIDTH, ORIGINAL_IMAGE_HEIGHT)
 
-class BlenderDataset(Dataset):
+class BlenderDatasetClassification(Dataset):
 
     def __init__(self,
                  use_masks: bool = False,
@@ -130,12 +130,6 @@ class BlenderDataset(Dataset):
         crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
             RENDERING_INTRINSIC.copy(), top=bbox1[1], left=bbox1[0]
         )
-        # crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
-        #     data["intrinsic"].copy(), top=bbox0[1], left=bbox0[0]
-        # )
-        # crop_data["intrinsics_1"] = calculate_intrinsic_for_crop(
-        #     data["intrinsic"].copy(), top=bbox1[1], left=bbox1[0]
-        # )
 
         resize_img_pair(crop_data, self.resize_modality)
 
@@ -156,13 +150,24 @@ class BlenderDataset(Dataset):
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'm')
         crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
 
-    def get_rotation_label(self, data):
-        T_C1 = pose_inv(data["T_WC_opencv"]) @ data["T_WO_frame_1"]
-        T_0C = pose_inv(data["T_WO_frame_0"]) @ data["T_WC_opencv"]
+    def get_rotation(self, data):
+        T_WC = data["T_WC_opencv"]
+        T_CW = pose_inv(T_WC)
+        T_C1 = T_CW @ data["T_WO_frame_1"]
+        T_0C = pose_inv(data["T_WO_frame_0"]) @ T_WC
         T_delta = T_C1 @ T_0C
+        rotvec = rot2rotvec(T_delta[:3, :3])
+        delta_magnitude = np.linalg.norm(rotvec) * 180/np.pi
         # return encode_rotation_matrix(T_delta[:3, :3]).astype(np.float32), T_delta
         # print(rot2rotvec(T_delta[:3, :3]).astype(np.float32))
-        return rot2rotvec(T_delta[:3, :3]).astype(np.float32), T_delta
+        return delta_magnitude
+    
+    def get_rotation_label(self, angle):
+        class_index = int(angle // (45/200))
+        # print("class index: ", class_index)
+        class_labels = np.zeros(200, dtype=np.float16)
+        class_labels[class_index] = 1.0
+        return class_labels
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -182,8 +187,9 @@ class BlenderDataset(Dataset):
                 data = self.load_scene(scene_dir)
                 crop_data = self.crop_object(data)        
                 self.project_pointclouds(crop_data)
-                encoded_R_delta, full_T_delta = self.get_rotation_label(data)
-                if calculate_rot_delta(full_T_delta[:3,:3]) < 35:
+                rot_magnitude = self.get_rotation(data)
+                if rot_magnitude < 45:
+                    rot_labels = self.get_rotation_label(rot_magnitude)
                     is_valid_scene = True
                 else:
                     self.idx = np.random.randint(0, len(self))
@@ -225,13 +231,13 @@ class BlenderDataset(Dataset):
         # print("\n\n\n\n")
         # print(crop_data["proj_0"][2][crop_data["proj_0"][0] != 0])
 
-        check_dim = 0
-        proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
-        proj0 /= np.max(proj0)*255
-        proj0 *= crop_data["seg_0"][:,:,None]
-        proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
-        proj1 /= np.max(proj1)*255
-        proj1 *= crop_data["seg_1"][:,:,None]
+        # check_dim = 0
+        # proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
+        # proj0 /= np.max(proj0)*255
+        # proj0 *= crop_data["seg_0"][:,:,None]
+        # proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
+        # proj1 /= np.max(proj1)*255
+        # proj1 *= crop_data["seg_1"][:,:,None]
 
         # # plt.figure()
         # # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
@@ -257,7 +263,7 @@ class BlenderDataset(Dataset):
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
             'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'label': encoded_R_delta,
+            'label': rot_labels,
             'dataset_name': 'Blender',
             'scene_id': self.idx,
             'pair_id': 0,
@@ -307,7 +313,7 @@ if __name__ == "__main__":
 
 
 
-    dataset = BlenderDataset(use_masks=True, resize_modality=5)
+    dataset = BlenderDatasetClassification(use_masks=True, resize_modality=5)
 
     print(f"\nThe dataset length is: {len(dataset)}")
 
@@ -323,22 +329,23 @@ if __name__ == "__main__":
     #         pcd2.paint_uniform_color([0, 0.651, 0.929])
     #         o3d.visualization.draw([pcd1, pcd2])
 
-    # for point in dataset:
-    #     for key in point.keys():
-    #         if isinstance(point[key], np.ndarray):
-    #             tp = point[key].dtype
-    #         else:
-    #             tp = type(point[key])
-    #         print(f"{key}: {tp}")
+    for point in dataset:
+        print("\n", point['label'].shape)
+        for key in point.keys():
+            if isinstance(point[key], np.ndarray):
+                tp = point[key].dtype
+            else:
+                tp = type(point[key])
+            print(f"{key}: {tp}")
 
-    n_samples = 4
-    labels = np.zeros((n_samples, 3))
-    for i in range(n_samples):
-        print(i)
-        data = dataset[i]
-        print(data['label'])
-        labels[i,:] = data['label'][None]
-    print(np.mean(labels, axis=0)) #[ 0.0282289   0.00679863 -0.01870937]
+    # n_samples = 4
+    # labels = np.zeros((n_samples, 3))
+    # for i in range(n_samples):
+    #     print(i)
+    #     data = dataset[i]
+    #     print(data['label'])
+    #     labels[i,:] = data['label'][None]
+    # print(np.mean(labels, axis=0)) #[ 0.0282289   0.00679863 -0.01870937]
 
 
     # proj0s = np.zeros((1))

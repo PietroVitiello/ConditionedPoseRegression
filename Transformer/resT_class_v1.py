@@ -5,10 +5,10 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 
-class ResNet_Transformer(nn.Module):
+class ResNet_Transformer_Classification(nn.Module):
 
     def __init__(self) -> None:
-        super(ResNet_Transformer, self).__init__()
+        super(ResNet_Transformer_Classification, self).__init__()
 
         self.encoder = ResNet_Backbone()
 
@@ -35,8 +35,8 @@ class ResNet_Transformer(nn.Module):
                                  nn.SELU(inplace=True))
         self.mlp2 = nn.Sequential(nn.Linear(in_features=128, out_features=64, bias=True),
                                  nn.SELU(inplace=True))
-        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=6, bias=True),
-                                 nn.Identity(inplace=True))
+        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=200, bias=True),
+                                 nn.Softmax(dim=1))
 
         # self._init_weights()
 
@@ -57,8 +57,8 @@ class ResNet_Transformer(nn.Module):
         encoded_live = torch.concat((encoded_live, self.image_token.repeat(encoded_live.shape[0],1,1)), dim=1)
         encoded_bottleneck = torch.concat((encoded_bottleneck, self.image_token.repeat(encoded_live.shape[0],1,1)), dim=1)
 
-        print(f"Encoded live:\n{encoded_live}")
-        print(f"\nEncoded bottleneck:\n{encoded_bottleneck}")
+        # print(f"Encoded live:\n{encoded_live}")
+        # print(f"\nEncoded bottleneck:\n{encoded_bottleneck}")
 
         attention_live =self.sa1a(encoded_live)
         attention_bottleneck =self.sa1b(encoded_bottleneck)
@@ -69,11 +69,11 @@ class ResNet_Transformer(nn.Module):
         attention =self.ca2(attention_live2, attention_bottleneck2)
         attention =self.sa3(attention)
 
-        print(f"\nAttention:\n{attention}")
+        # print(f"\nAttention:\n{attention}")
 
         # out = torch.mean(attention, dim=1) #mean of image tokens
         out = attention[:,-1,:]
-        print(f"\nAveraged attention:\n{out}")
+        # print(f"\nAveraged attention:\n{out}")
         out = self.mlp1(out)
         out = self.mlp2(out)
         out = self.mlp3(out)
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         "vmap1": rand_bottle,
     }
 
-    model = ResNet_Transformer()
+    model = ResNet_Transformer_Classification()
     print("Parameter cound: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
     out = model(batch)
     print(out.shape)

@@ -9,17 +9,20 @@ import numpy as np
 import pytorch_lightning as pl
 from matplotlib import pyplot as plt
 
-from losses import rotation_loss
+from losses import rotation_loss, rotvec_loss, cross_entropy_loss
 from optimizers import build_optimizer, build_scheduler
 from profiler import PassThroughProfiler
-from Utils.training_utils import calculate_rot_error
+from Utils.training_utils import calculate_rot_error_from_matrix, calculate_rot_error_from_class, calculate_rot_error_from_rotvec
 
 from Transformer.resT_v1 import ResNet_Transformer
+from Transformer.deep_resT_v1 import Deep_ResNet_Transformer
+from Transformer.resT_class_v1 import ResNet_Transformer_Classification
 from CNN.full_resnet_v1 import ResNet
 
 
 class PL_Model(pl.LightningModule):
     def __init__(self,
+                 modality: int,
                  model_name,
                  lr: float,
                  epochs: int,
@@ -40,14 +43,15 @@ class PL_Model(pl.LightningModule):
         self.profiler = profiler or PassThroughProfiler()
 
         # Matcher: LoFTR
-        self.model = self.model_choice(model_name)
-        self.loss = rotation_loss()
+        self.model = self.model_choice(model_name, modality)
+        self.loss = self.loss_choice(modality)
         self.optimizer = None # Will be set later in a lightning function
 
         self.lr = lr
         self.optimizer_name = optimizer_name
         self.scheduler_name = scheduler_name
         self.do_warmup = do_warmup
+        self.modality = modality
 
         # Pretrained weights
         print(pretrained_ckpt)
@@ -111,13 +115,34 @@ class PL_Model(pl.LightningModule):
             print("[WANDB] Incorrect logging stage")
         data.clear()
 
-    def model_choice(self, model_name):
+    def loss_choice(self, modality):
+        if modality == 0:
+            return rotation_loss()
+        elif modality == 1:
+            return cross_entropy_loss()
+        elif modality == 2:
+            return cross_entropy_loss()
+
+    def model_choice(self, model_name, modality):
         if model_name == "resnet":
             return ResNet()
         elif model_name == "transformer":
-            return ResNet_Transformer()
+            if modality == 0:
+                return ResNet_Transformer()
+            elif modality in [1, 2]:
+                return ResNet_Transformer_Classification()
+        elif model_name == "deep_transf":
+            return Deep_ResNet_Transformer()
         else:
             raise Exception("The chosen model is not supported")
+        
+    def calculate_rot_error(self, batch):
+        if self.modality == 0:
+            return calculate_rot_error_from_matrix(batch)
+        elif self.modality == 1:
+            return calculate_rot_error_from_class(batch, 45/200)
+        elif self.modality == 2:
+            return calculate_rot_error_from_class(batch, 90/200)
         
     def configure_optimizers(self):
         # FIXME: The scheduler did not work properly when `--resume_from_checkpoint`
@@ -153,6 +178,12 @@ class PL_Model(pl.LightningModule):
         
         with self.profiler.profile("Compute losses"):
             self.loss(batch)
+
+        # print(f"\nBatch outputs:\n{batch['pred']}")
+        # print(f"\nBatch outputs:\n{batch['label']}")
+        print(f"\nBatch outputs: {torch.argmax(batch['pred'].detach(), dim=1)}")
+        print(f"\nBatch labels: {torch.argmax(batch['label'].detach(), dim=1)}")
+        print(f"\nBatch loss:\n{batch['loss']}")
     
     def on_train_epoch_start(self) -> None:
         self.train_loss = np.zeros(1)
@@ -168,7 +199,7 @@ class PL_Model(pl.LightningModule):
             self.log("training_window_loss", window_average_loss)
             self.log("training_last_loss", self.train_loss[-1])
 
-            calculate_rot_error(batch)
+            self.calculate_rot_error(batch)
 
             if self.trainer.global_rank == 0:
                 if self.use_wandb:
@@ -183,7 +214,7 @@ class PL_Model(pl.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         self._trainval_inference(batch)
-        calculate_rot_error(batch)
+        self.calculate_rot_error(batch)
         return [batch['loss'].detach().cpu(),
                 batch['ori_error']]
         

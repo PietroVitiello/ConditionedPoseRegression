@@ -23,8 +23,8 @@ import cv2
 
 from Dataset.globals import DATASET_DIR
 from Dataset.preprocessing import resize_img_pair
-from Utils.data_utils import (pose_inv, bbox_from_mask, crop, calculate_intrinsic_for_crop, calculate_rot_delta, 
-                get_keypoint_indices, project_pointcloud, calculate_intrinsic_for_new_resolution, rot2rotvec)
+from Utils.data_utils import (pose_inv, bbox_from_mask, crop, calculate_intrinsic_for_crop, calculate_rot_delta,
+                get_keypoint_indices, project_pointcloud, calculate_intrinsic_for_new_resolution)
 from Utils.training_utils import encode_rotation_matrix
 
 # from .debug_utils import estimate_correspondences, estimate_correspondences_diff_intr
@@ -71,6 +71,7 @@ class BlenderDataset(Dataset):
 
         # for k in data.keys():
         #     print(k)
+        print(data['max_relative_angle_for_objs'])
 
         # print(data["colors"].shape)
         # print(data["depth"].shape)
@@ -123,7 +124,7 @@ class BlenderDataset(Dataset):
 
         crop_data["rgb_0"] = rgb0 / 255
         crop_data["rgb_1"] = rgb1 / 255
-        
+
         crop_data["intrinsics_0"] = calculate_intrinsic_for_crop(
             RENDERING_INTRINSIC.copy(), top=bbox0[1], left=bbox0[0]
         )
@@ -160,9 +161,7 @@ class BlenderDataset(Dataset):
         T_C1 = pose_inv(data["T_WC_opencv"]) @ data["T_WO_frame_1"]
         T_0C = pose_inv(data["T_WO_frame_0"]) @ data["T_WC_opencv"]
         T_delta = T_C1 @ T_0C
-        # return encode_rotation_matrix(T_delta[:3, :3]).astype(np.float32), T_delta
-        # print(rot2rotvec(T_delta[:3, :3]).astype(np.float32))
-        return rot2rotvec(T_delta[:3, :3]).astype(np.float32), T_delta
+        return encode_rotation_matrix(T_delta[:3, :3]).astype(np.float32), T_delta
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -182,8 +181,8 @@ class BlenderDataset(Dataset):
                 data = self.load_scene(scene_dir)
                 crop_data = self.crop_object(data)        
                 self.project_pointclouds(crop_data)
-                encoded_R_delta, full_T_delta = self.get_rotation_label(data)
-                if calculate_rot_delta(full_T_delta[:3,:3]) < 35:
+                R_delta, full_T_delta = self.get_rotation_label(data)
+                if calculate_rot_delta(full_T_delta[:3,:3]) < 30:
                     is_valid_scene = True
                 else:
                     self.idx = np.random.randint(0, len(self))
@@ -197,25 +196,6 @@ class BlenderDataset(Dataset):
         crop_data["rgb_1"] *= crop_data["seg_1"]
         crop_data["proj_1"] *= crop_data["seg_1"]
 
-        # print(crop_data["seg_0"].shape)
-        # print(crop_data["rgb_0"][np.repeat(crop_data["seg_0"][None], 3, axis=0)])
-
-        # crop_data["rgb_0"][np.repeat(crop_data["seg_0"][None], 3, axis=0)] = np.random.rand()
-        # crop_data["proj_0"] *= crop_data["seg_0"]
-        # crop_data["rgb_1"][np.repeat(crop_data["seg_1"][None], 3, axis=0)] = np.random.rand(3)
-        # crop_data["proj_1"] *= crop_data["seg_1"]
-
-        # background = np.random.rand(*tuple(crop_data["rgb_0"].shape)) * (~crop_data["seg_0"]) #random
-        # # background = np.ones(crop_data["rgb_0"].shape) * -1 * (~crop_data["seg_0"])
-        # crop_data["rgb_0"] *= crop_data["seg_0"]
-        # crop_data["rgb_0"] += background
-        # crop_data["proj_0"] *= crop_data["seg_0"]
-        # background = np.random.rand(*tuple(crop_data["rgb_0"].shape)) * (~crop_data["seg_1"]) #random
-        # # background = np.ones(crop_data["rgb_0"].shape) * -1 * (~crop_data["seg_1"])
-        # crop_data["rgb_1"] *= crop_data["seg_1"]
-        # crop_data["rgb_1"] += background
-        # crop_data["proj_1"] *= crop_data["seg_1"]
-
         # import sys
         # np.set_printoptions(threshold=sys.maxsize)
 
@@ -225,39 +205,36 @@ class BlenderDataset(Dataset):
         # print("\n\n\n\n")
         # print(crop_data["proj_0"][2][crop_data["proj_0"][0] != 0])
 
-        check_dim = 0
-        proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
-        proj0 /= np.max(proj0)*255
-        proj0 *= crop_data["seg_0"][:,:,None]
-        proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
-        proj1 /= np.max(proj1)*255
-        proj1 *= crop_data["seg_1"][:,:,None]
+        # check_dim = 2
+        # proj0 = (np.expand_dims(crop_data["proj_0"][check_dim,:,:], -1) - np.min(crop_data["proj_0"][check_dim,:,:]))
+        # proj0 /= np.max(proj0)*255
+        # proj0 *= crop_data["seg_0"][:,:,None]
+        # proj1 = (np.expand_dims(crop_data["proj_1"][check_dim,:,:], -1) - np.min(crop_data["proj_1"][check_dim,:,:]))
+        # proj1 /= np.max(proj1)*255
+        # proj1 *= crop_data["seg_1"][:,:,None]
 
         # # plt.figure()
         # # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
         # # plt.figure()
         # # plt.imshow(crop_data["rgb_1"].transpose(1,2,0))
         # plt.figure()
-        # # print("min 0: ", np.min(proj0))
-        # # print("min 1: ", np.min(proj1))
-        # # print("max 0: ", np.max(proj0))
-        # # print("max 1: ", np.max(proj1))
+        # print("min 0: ", np.min(proj0))
+        # print("min 1: ", np.min(proj1))
+        # print("max 0: ", np.max(proj0))
+        # print("max 1: ", np.max(proj1))
         # plt.imshow(proj0)
         # plt.figure()
         # plt.imshow(proj1)
-        # print(np.max(crop_data["rgb_0"]))
-        # plt.figure()
-        # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
-        # plt.figure()
-        # plt.imshow(crop_data["rgb_1"].transpose(1,2,0))
         # plt.show()
+
+
 
         data = {
             'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
             'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'label': encoded_R_delta,
+            'label': R_delta,
             'dataset_name': 'Blender',
             'scene_id': self.idx,
             'pair_id': 0,
@@ -265,13 +242,13 @@ class BlenderDataset(Dataset):
                            f"scene_{self.idx}_1")
         }
 
-        # data.update({
-        #     'd0': crop_data['depth_0'] * crop_data["seg_0"],
-        #     'd1': crop_data['depth_1'] * crop_data["seg_1"],
-        #     'intrinsics0': crop_data['intrinsics_0'],
-        #     'intrinsics1': crop_data['intrinsics_1'],
-        #     'T_delta': full_T_delta.astype(np.float64)
-        # })
+        data.update({
+            'd0': crop_data['depth_0'] * crop_data["seg_0"],
+            'd1': crop_data['depth_1'] * crop_data["seg_1"],
+            'intrinsics0': crop_data['intrinsics_0'],
+            'intrinsics1': crop_data['intrinsics_1'],
+            'T_delta': full_T_delta.astype(np.float64)
+        })
 
         return data
 
@@ -303,42 +280,119 @@ if __name__ == "__main__":
                                                                     extrinsic=np.eye(4))
         return pcd_o3d
     
-
-
+    def calculate_rot_error(R):
+        ori_delta = []
+        for i in range(len(R)):
+            rotvec = so3_log(R[i])
+            _ori_delta = np.rad2deg(np.linalg.norm(rotvec))
+            ori_delta.append(_ori_delta)
+        return np.mean(ori_delta), np.std(ori_delta), ori_delta
+    
 
 
     dataset = BlenderDataset(use_masks=True, resize_modality=5)
 
-    print(f"\nThe dataset length is: {len(dataset)}")
+    # print(f"\nThe dataset length is: {len(dataset)}")
+    # number_samples = 1000
+    # rotm = np.zeros((number_samples, 3, 3))
+    # proj0s = np.zeros((1,3))
+    # proj1s = np.zeros((1,3))
+    # for i in range(number_samples):
+    #     print(i)
+    #     data = dataset[i]
+    #     seg = data['vmap0'][0] != 0
+    #     print(f"x: {np.min(data['vmap0'][0][seg, None])}, {np.max(data['vmap0'][0][seg, None])}")
+    #     print(f"y: {np.min(data['vmap0'][1][seg, None])}, {np.max(data['vmap0'][1][seg, None])}")
+    #     print(f"z: {np.min(data['vmap0'][2][seg, None])}, {np.max(data['vmap0'][2][seg, None])}\n")
+    #     proj_data = np.concatenate((data['vmap0'][0][seg, None], data['vmap0'][1][seg, None], data['vmap0'][2][seg, None]), axis=1)
+    #     proj0s = np.concatenate((proj0s, proj_data))
+    #     seg = data['vmap1'][0] != 0
+    #     proj_data = np.concatenate((data['vmap1'][0][seg, None], data['vmap1'][1][seg, None], data['vmap1'][2][seg, None]), axis=1)
+    #     proj1s = np.concatenate((proj1s, proj_data))
 
-    # while True:
-    #     for point in dataset:
-    #         print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
-    #         depth = (point['d0'] * 1000).astype(np.uint16)
-    #         pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'])
-    #         pcd1.paint_uniform_color([1, 0.706, 0])
-    #         pcd1.transform(point['T_delta'])
-    #         depth = (point['d1'] * 1000).astype(np.uint16)
-    #         pcd2 = img_to_o3d_pcd(depth, point['intrinsics1'])
-    #         pcd2.paint_uniform_color([0, 0.651, 0.929])
-    #         o3d.visualization.draw([pcd1, pcd2])
+    #     rotm[i] = data['T_delta'][:3,:3]
+    
+    # print("Done. The metrics are:")
+    # print(f"1x: {np.mean(proj0s[1:,0], axis=0)} +/- {np.std(proj0s[1:,0], axis=0)}")
+    # print(f"1y: {np.mean(proj0s[1:,1], axis=0)} +/- {np.std(proj0s[1:,1], axis=0)}")
+    # print(f"1z: {np.mean(proj0s[1:,2], axis=0)} +/- {np.std(proj0s[1:,2], axis=0)}\n")
+
+    # print(f"2x: {np.mean(proj1s[1:,0], axis=0)} +/- {np.std(proj1s[1:,0], axis=0)}")
+    # print(f"2y: {np.mean(proj1s[1:,1], axis=0)} +/- {np.std(proj1s[1:,1], axis=0)}")
+    # print(f"2z: {np.mean(proj1s[1:,2], axis=0)} +/- {np.std(proj1s[1:,2], axis=0)}\n")
+
+    # error_metrics = calculate_rot_error(rotm)
+    # print(f"Average rotation magnitude: {error_metrics[0]}, {error_metrics[1]}")
+
+    # plt.figure()
+    # plt.hist(error_metrics[2])
+    # plt.figure()
+    # plt.hist(error_metrics[2])
+    # plt.figure()
+    # plt.hist(error_metrics[2])
+    # plt.show()
+
+    while True:
+        # for point in dataset:
+        #     print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
+        #     depth = (point['d0'] * 1000).astype(np.uint16)
+        #     rgb = (point['rgb0'].transpose(1,2,0) * 255).astype(np.uint8)
+        #     print(np.max(rgb), np.min(rgb))
+        #     pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'], rgb)
+        #     o3d.visualization.draw(pcd1)
+
+        # for point in dataset:
+        #     print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
+        #     depth = (point['d0'] * 1000).astype(np.uint16)
+        #     pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'])
+        #     pcd1.paint_uniform_color([1, 0.706, 0])
+        #     pcd2 = deepcopy(pcd1)
+        #     pcd2.paint_uniform_color([0, 0.651, 0.929])
+
+        #     T = np.array([
+        #         [1, 0, 0, 0],
+        #         [0, 1, 0, 0],
+        #         [0, 0, 1, 0],
+        #         [0, 0, 0, 1]
+        #     ], dtype=np.float64)
+        #     angle = np.deg2rad(180)
+        #     R = np.array([
+        #         [1, 0, 0],
+        #         [0, np.cos(angle), -np.sin(angle)],
+        #         [0, np.sin(angle), np.cos(angle)]
+        #     ], dtype=np.float64)
+
+        #     ########## Try with transformation world to camera
+
+        #     print(pcd1.transform(T))
+        #     print(pcd1.get_center())
+        #     axbb = pcd1.get_axis_aligned_bounding_box()
+        #     # pcd1.rotate(R, center=(0,0,0))
+        #     pcd1.rotate(R)
+        #     # o3d.visualization.draw([pcd1, pcd2])
+        #     o3d.visualization.draw([pcd2, axbb])
+        #     # o3d.visualization.draw_geometries([pcd1, pcd2])
+
+        for point in dataset:
+            print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
+            depth = (point['d0'] * 1000).astype(np.uint16)
+            pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'])
+            pcd1.paint_uniform_color([1, 0.706, 0])
+            pcd1.transform(point['T_delta'])
+            depth = (point['d1'] * 1000).astype(np.uint16)
+            pcd2 = img_to_o3d_pcd(depth, point['intrinsics1'])
+            pcd2.paint_uniform_color([0, 0.651, 0.929])
+            o3d.visualization.draw([pcd1, pcd2])
+
 
     # for point in dataset:
+    #     print("\n")
     #     for key in point.keys():
     #         if isinstance(point[key], np.ndarray):
     #             tp = point[key].dtype
     #         else:
     #             tp = type(point[key])
     #         print(f"{key}: {tp}")
-
-    n_samples = 4
-    labels = np.zeros((n_samples, 3))
-    for i in range(n_samples):
-        print(i)
-        data = dataset[i]
-        print(data['label'])
-        labels[i,:] = data['label'][None]
-    print(np.mean(labels, axis=0)) #[ 0.0282289   0.00679863 -0.01870937]
 
 
     # proj0s = np.zeros((1))
@@ -381,6 +435,11 @@ if __name__ == "__main__":
     # print(f"2x: {np.mean(proj1s[1:,0], axis=0)} +/- {np.std(proj1s[1:,0], axis=0)}")
     # print(f"2y: {np.mean(proj1s[1:,1], axis=0)} +/- {np.std(proj1s[1:,1], axis=0)}")
     # print(f"2z: {np.mean(proj1s[1:,2], axis=0)} +/- {np.std(proj1s[1:,2], axis=0)}")
+        
+
+    # dataset[2]
+
+    # print(len(dataset))
 
     # while True:
     #     for i in range(len(dataset)):

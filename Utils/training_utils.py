@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from .se3_tools import so3_log
+from .se3_tools import so3_log, rotvec2rot
 
 def normalize_vector(v, return_mag=False):
     _device = v.device
@@ -172,7 +172,7 @@ def calculate_error_between_poses_batch(poses_pred, poses_target):
 
     return pos_error / len(poses_pred), ori_error / len(poses_pred)
 
-def calculate_rot_error(batch: dict):
+def calculate_rot_error_from_matrix(batch: dict):
     ori_error = 0
     pred = decode_rotation_encoding(batch['pred'].detach().cpu())
     target = decode_rotation_encoding(batch['label'].detach().cpu())
@@ -183,3 +183,29 @@ def calculate_rot_error(batch: dict):
         ori_error += _ori_error
 
     batch.update({'ori_error': ori_error / len(pred)})
+
+
+def calculate_rot_error_from_rotvec(batch: dict):
+    ori_error = 0
+    for i in range(len(batch['pred'])):
+        # print(batch['pred'][i].detach().cpu())
+        pred = rotvec2rot(batch['pred'][i].detach().cpu().numpy())
+        target = rotvec2rot(batch['label'][i].detach().cpu().numpy())
+        delta_R = pred[:3, :3].T @ target[:3, :3]
+        rotvec = so3_log(delta_R)
+        _ori_error = np.rad2deg(np.linalg.norm(rotvec))
+        ori_error += _ori_error
+
+    batch.update({'ori_error': ori_error / len(batch['pred'])})
+
+def calculate_rot_error_from_class(batch: dict, bin_value):
+    ori_error = 0
+    for i in range(len(batch['pred'])):
+        # print(batch['pred'][i].detach().cpu())
+        pred = np.argmax(batch['pred'][i].detach().cpu().numpy())
+        target = np.argmax(batch['label'][i].detach().cpu().numpy())
+        error = np.abs(pred - target)
+        _ori_error = error * bin_value
+        ori_error += _ori_error
+
+    batch.update({'ori_error': ori_error / len(batch['pred'])})

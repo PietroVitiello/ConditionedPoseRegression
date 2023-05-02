@@ -33,11 +33,17 @@ def parse_args():
         '-name', '--run_name', type=str, default=None, required=True,
         help='Name of the run')
     parser.add_argument(
+        '-mode', '--modality', type=int, default=0, required=False,
+        help='The training modality')
+    parser.add_argument(
         '-resize_m', '--resize_modality', type=int, default=5, required=False,
         help='Set the modality used to resize the images. Options: [0-5]')
     parser.add_argument(
         '-margin', '--crop_margin', type=float, default=0.3, required=False,
         help='The margin to put around the cropped objects expressed in fraction [0-1]')
+    parser.add_argument(
+        '-split', '--train_split', type=float, default=0.98, required=False,
+        help='The training split in the dataset')
     parser.add_argument(
         '-mask', '--use_masks', action='store_true',
         help='Whether to upload the training information to weights and biases')
@@ -125,6 +131,7 @@ def main():
     # lightning module
     profiler = build_profiler(args.profiler_name)
     model = PL_Model(
+        args.modality,
         args.model_name,
         args.learning_rate,
         args.max_epochs,
@@ -141,7 +148,7 @@ def main():
 
     # lightning data
     # data_module = MultiSceneDataModule(args, config)
-    data_module = BlenderDataModule(args)
+    data_module = BlenderDataModule(args, train_split=args.train_split, modality=args.modality)
     loguru_logger.info(f"ASpanFormer DataModule initialized!")
 
     # TensorBoard Logger

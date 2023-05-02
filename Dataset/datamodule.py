@@ -21,6 +21,8 @@ from torch.utils.data import (
 )
 
 from Dataset.blender_dataset import BlenderDataset
+from Dataset.blender_dataset_class import BlenderDatasetClassification
+from Dataset.blender_dataset_1dof import BlenderDataset_1dof
 
 
 class BlenderDataModule(pl.LightningDataModule):
@@ -29,7 +31,8 @@ class BlenderDataModule(pl.LightningDataModule):
     only a part of the training scenes to reduce memory overhead.
     """
     def __init__(self, args,
-                 train_split: float = 0.98):
+                 train_split: float = 0.98,
+                 modality: int = 0):
         super().__init__()
 
         # 2. dataset config
@@ -59,9 +62,19 @@ class BlenderDataModule(pl.LightningDataModule):
         self.seed = 66  # 66
 
         self.train_split = train_split
-        self.full_dataset = BlenderDataset(args.use_masks, args.crop_margin, args.resize_modality,
-                                           args.segment_object, args.filter_dataset)
+        self.full_dataset = self.initialise_dataset(modality, args)
         self.training_dataset, self.validation_dataset = None, None
+
+    def initialise_dataset(self, modality, args):
+        if modality == 0:
+            return BlenderDataset(args.use_masks, args.crop_margin, args.resize_modality,
+                                  args.segment_object, args.filter_dataset)
+        elif modality == 1:
+            return BlenderDatasetClassification(args.use_masks, args.crop_margin, args.resize_modality,
+                                                args.segment_object, args.filter_dataset)
+        elif modality == 2:
+            return BlenderDataset_1dof(args.use_masks, args.crop_margin, args.resize_modality,
+                                       args.segment_object, args.filter_dataset)
 
     def setup(self, stage=None):
         """
