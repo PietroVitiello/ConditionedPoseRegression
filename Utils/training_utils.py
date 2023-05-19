@@ -209,3 +209,13 @@ def calculate_rot_error_from_class(batch: dict, bin_value):
         ori_error += _ori_error
 
     batch.update({'ori_error': ori_error / len(batch['pred'])})
+
+def calculate_rot_error_from_classreg(batch: dict):
+    ori_error = 0
+    for i in range(len(batch['pred'])):
+        pred = batch['pred'][i,0].detach().cpu().numpy()
+        target = batch['label'][i].detach().cpu().numpy()
+        _ori_error = np.abs(pred - target) * 45
+        ori_error += _ori_error
+
+    batch.update({'ori_error': ori_error / len(batch['pred'])})

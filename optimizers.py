@@ -7,6 +7,8 @@ def build_optimizer(model, name, lr):
         return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.)
     elif name == "adamw":
         return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.1)
+    elif name == "sgd":
+        return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.1)
     else:
         raise ValueError(f"TRAINER.OPTIMIZER = {name} is not a valid optimizer!")
 
@@ -32,7 +34,7 @@ def build_scheduler(name, optimizer):
             {'scheduler': MultiStepLR(optimizer, [3, 6, 9, 12], gamma=0.5)})
     elif name == 'CosineAnnealing':
         scheduler.update(
-            {'scheduler': CosineAnnealingLR(optimizer, 2000, eta_min=1e-6)})
+            {'scheduler': CosineAnnealingLR(optimizer, 181250, eta_min=1e-6)})
     elif name == 'ExponentialLR':
         scheduler.update(
             {'scheduler': ExponentialLR(optimizer, 0.999992)})

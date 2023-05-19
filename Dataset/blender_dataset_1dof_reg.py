@@ -31,17 +31,15 @@ from Utils.training_utils import encode_rotation_matrix
 
 m.patch()
 
-class BlenderDataset_1dof(Dataset):
+class BlenderDataset_1dof_reg(Dataset):
 
     def __init__(self,
                  crop_margin: float = 0.05, #0.3
-                 n_bins: int = 18,
-                 debug: bool = False) -> None:
+                 n_bins: int = 18) -> None:
         self.dataset_dir = DATASET_DIR
         self.idx = None
         self.crop_margin = crop_margin
         self.bin_number = n_bins
-        self.debug_mode = debug
 
         self.scene_names = np.sort(glob.glob(os.path.join(self.dataset_dir, 'scene_*')))
 
@@ -140,7 +138,7 @@ class BlenderDataset_1dof(Dataset):
         projected_keypoints = project_pointcloud(keypoints, depth, K, 'm')
         crop_data['proj_1'] = projected_keypoints.reshape((depth.shape[1], depth.shape[0], 3)).transpose(2,0,1).astype(np.float32)
 
-    def get_rotation(self, data):
+    def get_rotation_label(self, data):
         T_WC = data["T_WC_opencv"]
         T_CW = pose_inv(T_WC)
         T_C1 = T_CW @ data["T_WO_frame_1"]
@@ -153,14 +151,8 @@ class BlenderDataset_1dof(Dataset):
         z_axis = np.array([0,0,1])
         if np.dot(z_axis, axis) < 0:
             delta_magnitude *= -1
-        return delta_magnitude * 180/np.pi, T_delta_cam
-    
-    def get_rotation_label(self, angle):
-        angle += 45 #make sure the whole interval [-45, 45] is positive
-        class_index = int(angle // (90/self.bin_number))
-        class_labels = np.zeros(self.bin_number, dtype=np.float32)
-        class_labels[class_index] = 1.0
-        return class_labels
+        angle_label = torch.tensor(delta_magnitude * 180/np.pi, dtype=torch.float32)
+        return angle_label/45, T_delta_cam
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
@@ -180,9 +172,8 @@ class BlenderDataset_1dof(Dataset):
                 data = self.load_scene(scene_dir)
                 crop_data = self.crop_object(data)        
                 self.project_pointclouds(crop_data)
-                rot_magnitude, full_T_delta = self.get_rotation(data)
-                assert rot_magnitude < 45.1, "The rotation magnitude is actually above 45 degrees"
-                rot_labels = self.get_rotation_label(rot_magnitude)
+                rot_labels, full_T_delta = self.get_rotation_label(data)
+                assert rot_labels < 45.1, "The rotation magnitude is actually above 45 degrees"
                 is_valid_scene = True
             except Exception as e:
                 logger.warning(f"[SCENE {self.idx}] The following exception was found: \n{e}")
@@ -249,20 +240,7 @@ class BlenderDataset_1dof(Dataset):
         # plt.imshow(crop_data["rgb_1"].transpose(1,2,0))
         # plt.show()
 
-        if self.debug_mode:
-            data = {
-                'd0': crop_data['depth_0'] * crop_data["seg_0"],
-                'd1': crop_data['depth_1'] * crop_data["seg_1"],
-                'intrinsics0': crop_data['intrinsics_0'],
-                'intrinsics1': crop_data['intrinsics_1'],
-                'T_delta': full_T_delta.astype(np.float64),
-                'T_WC_opencv': data["T_WC_opencv"],
-                'T_CW_opencv': pose_inv(data["T_WC_opencv"])
-            }
-        else:
-            data = {}
-
-        data.update({
+        data = {
             'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
             'vmap0': crop_data["proj_0"],   # (h, w)
             'rgb1': crop_data["rgb_1"].astype(np.float32),
@@ -273,8 +251,15 @@ class BlenderDataset_1dof(Dataset):
             'pair_id': 0,
             'pair_names': (f"scene_{self.idx}_0",
                            f"scene_{self.idx}_1")
-        })
+        }
 
+        # data.update({
+        #     'd0': crop_data['depth_0'] * crop_data["seg_0"],
+        #     'd1': crop_data['depth_1'] * crop_data["seg_1"],
+        #     'intrinsics0': crop_data['intrinsics_0'],
+        #     'intrinsics1': crop_data['intrinsics_1'],
+        #     'T_delta': full_T_delta.astype(np.float64)
+        # })
 
         return data
 
@@ -310,23 +295,24 @@ if __name__ == "__main__":
 
 
 
-    dataset = BlenderDataset_1dof()
+    dataset = BlenderDataset_1dof_reg()
 
     print(f"\nThe dataset length is: {len(dataset)}")
 
     # while True:
     #     for point in dataset:
-            # print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
-            # depth = (point['d0'] * 1000).astype(np.uint16)
-            # pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'])
-            # pcd1.paint_uniform_color([1, 0.706, 0])
-            # pcd1.transform(point['T_delta'])
-            # depth = (point['d1'] * 1000).astype(np.uint16)
-            # pcd2 = img_to_o3d_pcd(depth, point['intrinsics1'])
-            # pcd2.paint_uniform_color([0, 0.651, 0.929])
-            # o3d.visualization.draw([pcd1, pcd2])
+    #         print(f"Scene id: {point['scene_id']}\nObject id: {point['pair_id']}\n")
+    #         depth = (point['d0'] * 1000).astype(np.uint16)
+    #         pcd1 = img_to_o3d_pcd(depth, point['intrinsics0'])
+    #         pcd1.paint_uniform_color([1, 0.706, 0])
+    #         pcd1.transform(point['T_delta'])
+    #         depth = (point['d1'] * 1000).astype(np.uint16)
+    #         pcd2 = img_to_o3d_pcd(depth, point['intrinsics1'])
+    #         pcd2.paint_uniform_color([0, 0.651, 0.929])
+    #         o3d.visualization.draw([pcd1, pcd2])
 
     for point in dataset:
+        print(point['label'])
         # for key in point.keys():
         #     if isinstance(point[key], np.ndarray):
         #         tp = point[key].dtype

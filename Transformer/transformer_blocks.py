@@ -22,7 +22,7 @@ class FeedForward(nn.Module):
         super().__init__()
         self.ffn = nn.Sequential(
             nn.Linear(in_features=d_model, out_features=d_hidden),
-            nn.SELU(inplace=True),
+            nn.GELU(),
             nn.Dropout(p_dropout),
             nn.Linear(in_features=d_hidden, out_features=d_model)
         )
@@ -95,17 +95,6 @@ class SA_Block(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.transformer_block(x, x, x)
 
-class Add_Norm(nn.Module):
-
-    def __init__(self, normalized_shape) -> None:
-        super().__init__()
-        self.norm = nn.LayerNorm(normalized_shape)
-
-    def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
-        x = x + residual
-        return self.norm(x)
-
-
 
 class TransformerBlock_LayerNormBefore(nn.Module):
 
@@ -116,12 +105,12 @@ class TransformerBlock_LayerNormBefore(nn.Module):
         num_heads: int = 8
     ) -> None:
         super().__init__()
-        self.norm = nn.LayerNorm((seq_len, embed_dim))
+        self.norm_att = nn.LayerNorm((seq_len, embed_dim))
         self.mh_attention = nn.MultiheadAttention(
             embed_dim=embed_dim, num_heads=num_heads
         )
 
-        self.addnorm = Add_Norm((seq_len, embed_dim))
+        self.norm_ffn = nn.LayerNorm((seq_len, embed_dim))
         self.ffn = FeedForward(d_model=embed_dim)
 
     def forward(
@@ -129,11 +118,12 @@ class TransformerBlock_LayerNormBefore(nn.Module):
         query: torch.Tensor,
         support: torch.Tensor
     ) -> torch.Tensor:
-        query_norm = self.norm(query)
-        support_norm = self.norm(support)
+        query_norm = self.norm_att(query)
+        support_norm = self.norm_att(support)
         intermediate, _ = self.mh_attention(query_norm, support_norm, support_norm)
+        intermediate = intermediate + query
 
-        out = self.addnorm(intermediate, query)
+        out = self.norm_ffn(intermediate)
         out = self.ffn(out) + intermediate
         return out
 

@@ -7,8 +7,10 @@ class ConvBlock(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=3, padding=1),
-            nn.BatchNorm2d(num_features=ch_out),
-            nn.SELU(inplace=True),
+            # nn.BatchNorm2d(num_features=ch_out),
+            nn.InstanceNorm2d(num_features=ch_out),
+            # nn.SELU(inplace=True),
+            nn.LeakyReLU(inplace=True)
         )
         self.downsample = None
         if downsample:
@@ -50,7 +52,8 @@ class ResNet_Block_0(nn.Module):
         )
         self.residual_layer = nn.Sequential(
             nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
-            nn.BatchNorm2d(num_features=ch_out)
+            # nn.BatchNorm2d(num_features=ch_out)
+            nn.InstanceNorm2d(num_features=ch_out)
         )
         self.final_activation = nn.SELU(inplace=True)
 
@@ -69,7 +72,8 @@ class ResNet_Block_2(nn.Module):
         )
         self.residual_layer = nn.Sequential(
             nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
-            nn.BatchNorm2d(num_features=ch_out),
+            # nn.BatchNorm2d(num_features=ch_out),
+            nn.InstanceNorm2d(num_features=ch_out),
             nn.AvgPool2d(kernel_size=2, stride=2),
         )
         self.final_activation = nn.SELU(inplace=True)
@@ -89,7 +93,8 @@ class ResNet_Block_4(nn.Module):
         )
         self.residual_layer = nn.Sequential(
             nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
-            nn.BatchNorm2d(num_features=ch_out),
+            # nn.BatchNorm2d(num_features=ch_out),
+            nn.InstanceNorm2d(num_features=ch_out),
             nn.AvgPool2d(kernel_size=4, stride=4),
         )
         self.final_activation = nn.SELU(inplace=True)

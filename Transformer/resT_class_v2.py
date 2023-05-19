@@ -1,5 +1,5 @@
 from Transformer.transformer_blocks import CA_Block_LayerNormBefore as CA_Block, SA_Block_LayerNormBefore as SA_Block
-from CNN.backbone import ResNet_Backbone
+from CNN.backbone import ResNet_Backbone_512
 
 import torch
 import torch.nn as nn
@@ -10,32 +10,43 @@ class ResNet_Transformer_Classification(nn.Module):
     def __init__(self, n_classes: int = 18) -> None:
         super(ResNet_Transformer_Classification, self).__init__()
 
-        self.encoder = ResNet_Backbone()
+        self.encoder = ResNet_Backbone_512()
 
         self.pos_encoding = Parameter(
-            data = torch.randn(1,1024,256) /2,
+            data = torch.rand(1,1024,512) * 2 - 1,
             requires_grad = True
         )
 
         self.image_token = Parameter(
-            data = torch.randn(1,1,256) /2 ,
+            data = torch.rand(1,1,512) * 2 - 1 ,
             requires_grad = True
         )
 
-        self.sa1a = SA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.sa1b = SA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.ca1a = CA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.ca1b = CA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.sa2a = SA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.sa2b = SA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.ca2 = CA_Block(seq_len=1025, embed_dim=256, num_heads=4)
-        self.sa3 = SA_Block(seq_len=1025, embed_dim=256, num_heads=4)
+        # self.pos_encoding = Parameter(
+        #     data = torch.randn(1,1024,512) /2,
+        #     requires_grad = True
+        # )
 
-        self.mlp1 = nn.Sequential(nn.Linear(in_features=256, out_features=128, bias=True),
-                                 nn.SELU(inplace=True))
-        self.mlp2 = nn.Sequential(nn.Linear(in_features=128, out_features=64, bias=True),
-                                 nn.SELU(inplace=True))
-        self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=n_classes, bias=True),
+        # self.image_token = Parameter(
+        #     data = torch.randn(1,1,512) /2 ,
+        #     requires_grad = True
+        # )
+
+        self.sa1a = SA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.sa1b = SA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.ca1a = CA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.ca1b = CA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.sa2a = SA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.sa2b = SA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.ca2 = CA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.sa3 = SA_Block(seq_len=1025, embed_dim=512, num_heads=4)
+        self.final_norm = nn.LayerNorm((1025, 512))
+
+        self.mlp1 = nn.Sequential(nn.Linear(in_features=512, out_features=256, bias=True),
+                                 nn.GELU())
+        self.mlp2 = nn.Sequential(nn.Linear(in_features=256, out_features=128, bias=True),
+                                 nn.GELU())
+        self.mlp3 = nn.Sequential(nn.Linear(in_features=128, out_features=n_classes, bias=True),
                                  nn.Identity(inplace=True))
 
         # self._init_weights()
@@ -49,8 +60,8 @@ class ResNet_Transformer_Classification(nn.Module):
     def forward(self, batch: dict) -> torch.Tensor:
         # print(f"live :\n{batch['rgb0'][0]}")
         # print(f"bottleneck :\n{batch['rgb1'][0]}")
-        encoded_live = self.encoder(batch["rgb0"], batch["vmap0"]).permute(0, 2, 3, 1).reshape(-1, 1024, 256)
-        encoded_bottleneck = self.encoder(batch["rgb1"], batch["vmap1"]).permute(0, 2, 3, 1).reshape(-1, 1024, 256)
+        encoded_live = self.encoder(batch["rgb0"], batch["vmap0"]).permute(0, 2, 3, 1).reshape(-1, 1024, 512)
+        encoded_bottleneck = self.encoder(batch["rgb1"], batch["vmap1"]).permute(0, 2, 3, 1).reshape(-1, 1024, 512)
         encoded_live = encoded_live + self.pos_encoding
         encoded_bottleneck = encoded_bottleneck + self.pos_encoding
 
@@ -60,14 +71,15 @@ class ResNet_Transformer_Classification(nn.Module):
         # print(f"Encoded live:\n{encoded_live}")
         # print(f"\nEncoded bottleneck:\n{encoded_bottleneck}")
 
-        attention_live =self.sa1a(encoded_live)
-        attention_bottleneck =self.sa1b(encoded_bottleneck)
-        attention_live2 =self.ca1a(attention_live, attention_bottleneck)
-        attention_bottleneck2 =self.ca1b(attention_bottleneck, attention_live)
-        attention_live2 =self.sa2a(attention_live2)
-        attention_bottleneck2 =self.sa2b(attention_bottleneck2)
-        attention =self.ca2(attention_live2, attention_bottleneck2)
-        attention =self.sa3(attention)
+        attention_live = self.sa1a(encoded_live)
+        attention_bottleneck = self.sa1b(encoded_bottleneck)
+        attention_live2 = self.ca1a(attention_live, attention_bottleneck)
+        attention_bottleneck2 = self.ca1b(attention_bottleneck, attention_live)
+        attention_live2 = self.sa2a(attention_live2)
+        attention_bottleneck2 = self.sa2b(attention_bottleneck2)
+        attention = self.ca2(attention_live2, attention_bottleneck2)
+        attention = self.sa3(attention)
+        attention = self.final_norm(attention)
 
         # print(f"\nAttention:\n{attention}")
 

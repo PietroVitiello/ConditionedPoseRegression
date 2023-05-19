@@ -46,22 +46,16 @@ RENDERING_INTRINSIC = calculate_intrinsic_for_new_resolution(
 class BlenderDatasetClassification(Dataset):
 
     def __init__(self,
-                 use_masks: bool = False,
                  crop_margin: float = 0.3,
-                 resize_modality: int = 0,
-                 segment_object: bool = False,
-                 filter_data: bool = False) -> None:
+                 n_bins: int = 18) -> None:
         self.dataset_dir = DATASET_DIR
         self.idx = None
-
-        self.use_masks = use_masks
         self.crop_margin = crop_margin
-        self.resize_modality = resize_modality
-        self.segment_object = segment_object
-        self.filter_data = filter_data
+        self.bin_number = n_bins
 
     def __len__(self):
         return len(np.sort(glob.glob(os.path.join(self.dataset_dir, 'scene_*'))))
+        # return 20
 
     def load_scene(self, scene_dir) -> dict:
         scene_filename = scene_dir + '.msgpack'
@@ -131,7 +125,7 @@ class BlenderDatasetClassification(Dataset):
             RENDERING_INTRINSIC.copy(), top=bbox1[1], left=bbox1[0]
         )
 
-        resize_img_pair(crop_data, self.resize_modality)
+        resize_img_pair(crop_data, 6)
 
         return crop_data
     
@@ -162,10 +156,16 @@ class BlenderDatasetClassification(Dataset):
         # print(rot2rotvec(T_delta[:3, :3]).astype(np.float32))
         return delta_magnitude
     
+    # def get_rotation_label(self, angle):
+    #     class_index = int(angle // (45/200))
+    #     # print("class index: ", class_index)
+    #     class_labels = np.zeros(200, dtype=np.float32)
+    #     class_labels[class_index] = 1.0
+    #     return class_labels
+
     def get_rotation_label(self, angle):
-        class_index = int(angle // (45/200))
-        # print("class index: ", class_index)
-        class_labels = np.zeros(200, dtype=np.float16)
+        class_index = int(angle // (45/self.bin_number))
+        class_labels = np.zeros(self.bin_number, dtype=np.float32)
         class_labels[class_index] = 1.0
         return class_labels
 
@@ -202,6 +202,11 @@ class BlenderDatasetClassification(Dataset):
         crop_data["proj_0"] *= crop_data["seg_0"]
         crop_data["rgb_1"] *= crop_data["seg_1"]
         crop_data["proj_1"] *= crop_data["seg_1"]
+
+        # crop_data["rgb_0"] = np.ones(crop_data["rgb_0"].shape) * np.random.rand()
+        # crop_data["proj_0"] *= crop_data["seg_0"]
+        # crop_data["rgb_1"] = np.ones(crop_data["rgb_0"].shape) * np.random.rand()
+        # crop_data["proj_1"] *= crop_data["seg_1"]
 
         # print(crop_data["seg_0"].shape)
         # print(crop_data["rgb_0"][np.repeat(crop_data["seg_0"][None], 3, axis=0)])
@@ -313,7 +318,7 @@ if __name__ == "__main__":
 
 
 
-    dataset = BlenderDatasetClassification(use_masks=True, resize_modality=5)
+    dataset = BlenderDatasetClassification()
 
     print(f"\nThe dataset length is: {len(dataset)}")
 
@@ -329,14 +334,42 @@ if __name__ == "__main__":
     #         pcd2.paint_uniform_color([0, 0.651, 0.929])
     #         o3d.visualization.draw([pcd1, pcd2])
 
+    # for point in dataset:
+    #     print("\n", point['label'].shape)
+    #     for key in point.keys():
+    #         if isinstance(point[key], np.ndarray):
+    #             tp = point[key].dtype
+    #         else:
+    #             tp = type(point[key])
+    #         print(f"{key}: {tp}")
+
     for point in dataset:
-        print("\n", point['label'].shape)
-        for key in point.keys():
-            if isinstance(point[key], np.ndarray):
-                tp = point[key].dtype
-            else:
-                tp = type(point[key])
-            print(f"{key}: {tp}")
+        check_dim = 0
+        proj0 = (np.expand_dims(point["vmap0"][check_dim,:,:], -1) - np.min(point["vmap0"][check_dim,:,:]))
+        proj0 /= np.max(proj0)*255
+        proj0 *= (point["vmap0"][0] == 0)[:,:,None]
+        proj1 = (np.expand_dims(point["vmap1"][check_dim,:,:], -1) - np.min(point["vmap1"][check_dim,:,:]))
+        proj1 /= np.max(proj1)*255
+        proj1 *= (point["vmap1"][0] == 0)[:,:,None]
+
+        # plt.figure()
+        # plt.imshow(crop_data["rgb_0"].transpose(1,2,0))
+        # plt.figure()
+        # plt.imshow(crop_data["rgb_1"].transpose(1,2,0))
+        plt.figure()
+        # print("min 0: ", np.min(proj0))
+        # print("min 1: ", np.min(proj1))
+        # print("max 0: ", np.max(proj0))
+        # print("max 1: ", np.max(proj1))
+        plt.imshow(proj0)
+        plt.figure()
+        plt.imshow(proj1)
+        # print(np.max(point["rgb0"]))
+        plt.figure()
+        plt.imshow(point["rgb0"].transpose(1,2,0))
+        plt.figure()
+        plt.imshow(point["rgb1"].transpose(1,2,0))
+        plt.show()
 
     # n_samples = 4
     # labels = np.zeros((n_samples, 3))

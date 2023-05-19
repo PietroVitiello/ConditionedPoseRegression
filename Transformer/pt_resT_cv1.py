@@ -1,3 +1,6 @@
+import os
+from pathlib import Path
+
 from Transformer.transformer_blocks import CA_Block_LayerNormBefore as CA_Block, SA_Block_LayerNormBefore as SA_Block
 from CNN.backbone import ResNet_Backbone
 
@@ -5,10 +8,10 @@ import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 
-class ResNet_Transformer_Classification(nn.Module):
+class PreTrained_RNTransformer_Class(nn.Module):
 
     def __init__(self, n_classes: int = 18) -> None:
-        super(ResNet_Transformer_Classification, self).__init__()
+        super(PreTrained_RNTransformer_Class, self).__init__()
 
         self.encoder = ResNet_Backbone()
 
@@ -38,13 +41,20 @@ class ResNet_Transformer_Classification(nn.Module):
         self.mlp3 = nn.Sequential(nn.Linear(in_features=64, out_features=n_classes, bias=True),
                                  nn.Identity(inplace=True))
 
-        # self._init_weights()
-
-    # def _init_weights(self):
-    #     r"""Initiate parameters in the transformer model."""
-    #     for p in self.parameters():
-    #         if p.dim() > 1:
-    #             nn.init.xavier_uniform_(p)
+        self.initialise_pretrained("pretrained_dres_1/version_0/checkpoints/epoch=2-val_loss=1.8490.ckpt")
+        
+    def initialise_pretrained(self, ckpt_dir):
+        ckpt_dir = os.path.join(Path(__file__).parent.parent, 'logs', ckpt_dir)
+        state_dict = torch.load(ckpt_dir, map_location='cpu')['state_dict']
+        own_state = self.state_dict()
+        for name, param in state_dict.items():
+            if "encoder" in name:
+                if isinstance(param, Parameter):
+                    # backwards compatibility for serialized parameters
+                    param = param.data
+                print(f"Loading {name} parameters")
+                name = name[6:] #remove 'model.'
+                own_state[name].copy_(param)
 
     def forward(self, batch: dict) -> torch.Tensor:
         # print(f"live :\n{batch['rgb0'][0]}")
@@ -97,11 +107,17 @@ if __name__ == "__main__":
         "vmap1": rand_bottle,
     }
 
-    model = ResNet_Transformer_Classification()
+    model = PreTrained_RNTransformer_Class()
     print("Parameter cound: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
-    out = model(batch)
+    with torch.no_grad():
+        out = model(batch)
     print(out.shape)
     # print(out)
+
+
+
+
+
 
 
 

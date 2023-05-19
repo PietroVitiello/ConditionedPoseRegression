@@ -20,9 +20,12 @@ from torch.utils.data import (
     random_split
 )
 
+from Dataset.debug_dataset import DebugDataset
 from Dataset.blender_dataset import BlenderDataset
 from Dataset.blender_dataset_class import BlenderDatasetClassification
 from Dataset.blender_dataset_1dof import BlenderDataset_1dof
+from Dataset.blender_dataset_1dof_reg import BlenderDataset_1dof_reg
+from Dataset.bd_1dof_clNreg import BlenderDataset_1dof_classNreg
 
 
 class BlenderDataModule(pl.LightningDataModule):
@@ -70,11 +73,15 @@ class BlenderDataModule(pl.LightningDataModule):
             return BlenderDataset(args.use_masks, args.crop_margin, args.resize_modality,
                                   args.segment_object, args.filter_dataset)
         elif modality == 1:
-            return BlenderDatasetClassification(args.use_masks, args.crop_margin, args.resize_modality,
-                                                args.segment_object, args.filter_dataset)
+            return BlenderDatasetClassification(args.crop_margin, args.class_bins)
+            # return DebugDataset(args.use_masks, args.crop_margin, args.resize_modality,
+            #                     args.segment_object, args.filter_dataset)
         elif modality == 2:
-            return BlenderDataset_1dof(args.use_masks, args.crop_margin, args.resize_modality,
-                                       args.segment_object, args.filter_dataset)
+            return BlenderDataset_1dof(args.crop_margin, args.class_bins)
+        elif modality == 3:
+            return BlenderDataset_1dof_reg(args.crop_margin, args.class_bins)
+        elif modality == 4:
+            return BlenderDataset_1dof_classNreg(args.crop_margin, args.class_bins)
 
     def setup(self, stage=None):
         """

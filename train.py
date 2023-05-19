@@ -33,26 +33,20 @@ def parse_args():
         '-name', '--run_name', type=str, default=None, required=True,
         help='Name of the run')
     parser.add_argument(
-        '-mode', '--modality', type=int, default=0, required=False,
+        '-mode', '--modality', type=int, default=2, required=False,
         help='The training modality')
     parser.add_argument(
         '-resize_m', '--resize_modality', type=int, default=5, required=False,
         help='Set the modality used to resize the images. Options: [0-5]')
     parser.add_argument(
-        '-margin', '--crop_margin', type=float, default=0.3, required=False,
+        '-margin', '--crop_margin', type=float, default=0.05, required=False,
         help='The margin to put around the cropped objects expressed in fraction [0-1]')
     parser.add_argument(
         '-split', '--train_split', type=float, default=0.98, required=False,
         help='The training split in the dataset')
     parser.add_argument(
-        '-mask', '--use_masks', action='store_true',
-        help='Whether to upload the training information to weights and biases')
-    parser.add_argument(
-        '-seg', '--segment_object', action='store_true',
-        help='Whether to fully segment the objects in the input images (True) or leave the background (False)')
-    parser.add_argument(
-        '-filter', '--filter_dataset', action='store_true',
-        help='Whether to filter the dataset by removing more complex datapoints')
+        '-bins', '--class_bins', type=int, default=18, required=False,
+        help='The number of bins to use in the classification task')
     parser.add_argument(
         '-wandb', '--use_wandb', action='store_true',
         help='Whether to upload the training information to weights and biases')
@@ -71,6 +65,9 @@ def parse_args():
     parser.add_argument(
         '-sched', '--scheduler_name', type=str, default='plateau', required=False,
         help='Name of the chosen scheduler')
+    parser.add_argument(
+        '-no_warm', '--no_warmup', action='store_true',
+        help='Whether to have learning rate warm up or not')
     parser.add_argument(
         '--pin_memory', type=lambda x: bool(strtobool(x)),
         nargs='?', default=False, help='whether loading data to pinned memory or not')
@@ -100,6 +97,15 @@ def parse_args():
     parser.add_argument(
         '--ini', type=str2bool, default=False,
         help='pretrained checkpoint path, helpful for using a pre-trained coarse-only ASpanFormer')
+    parser.add_argument(
+        '-mask', '--use_masks', action='store_true',
+        help='Whether to upload the training information to weights and biases')
+    parser.add_argument(
+        '-seg', '--segment_object', action='store_true',
+        help='Whether to fully segment the objects in the input images (True) or leave the background (False)')
+    parser.add_argument(
+        '-filter', '--filter_dataset', action='store_true',
+        help='Whether to filter the dataset by removing more complex datapoints')
 
     parser = pl.Trainer.add_argparse_args(parser)
     '''
@@ -131,18 +137,8 @@ def main():
     # lightning module
     profiler = build_profiler(args.profiler_name)
     model = PL_Model(
-        args.modality,
-        args.model_name,
-        args.learning_rate,
-        args.max_epochs,
-        args.batch_size,
-        args.optimizer_name,
-        args.scheduler_name,
-        True,
-        args.run_name,
-        pretrained_ckpt=args.ckpt_path,
+        args,
         profiler=profiler,
-        use_wandb=args.use_wandb
     )
     loguru_logger.info(f"ASpanFormer LightningModule initialized!")
 
@@ -160,7 +156,7 @@ def main():
     # TODO: update ModelCheckpoint to monitor multiple metrics
     training_validation_interval = 3000
     train_w_loss_callback = ModelCheckpoint(monitor='training_window_loss', verbose=True, save_top_k=3, mode='min',
-                                            save_last=True,
+                                            save_last=False,
                                             every_n_train_steps=150,
                                             dirpath=str(ckpt_dir),
                                             filename='{epoch}-{step}-{training_window_loss:.4f}')
@@ -174,6 +170,11 @@ def main():
                                        every_n_train_steps=training_validation_interval,
                                        dirpath=str(ckpt_dir),
                                        filename='{epoch}-{val_loss:.4f}')
+    val_ori_callback = ModelCheckpoint(monitor='val_ori_error', verbose=True, save_top_k=3, mode='min',
+                                       save_last=True,
+                                       every_n_train_steps=training_validation_interval,
+                                       dirpath=str(ckpt_dir),
+                                       filename='{epoch}-{val_ori_error:.4f}')
 
     lr_monitor = LearningRateMonitor(logging_interval='step')
     callbacks = [lr_monitor]
@@ -182,6 +183,7 @@ def main():
         callbacks.append(train_w_loss_callback)
         # validation
         callbacks.append(val_loss_callback)
+        callbacks.append(val_ori_callback)
         # callbacks.append(val_auc_callback)
 
     # Lightning Trainer
