@@ -13,7 +13,7 @@ def build_optimizer(model, name, lr):
         raise ValueError(f"TRAINER.OPTIMIZER = {name} is not a valid optimizer!")
 
 
-def build_scheduler(name, optimizer):
+def build_scheduler(name, optimizer, max_epochs):
     """
     Returns:
         scheduler (dict):{
@@ -33,8 +33,11 @@ def build_scheduler(name, optimizer):
         scheduler.update(
             {'scheduler': MultiStepLR(optimizer, [3, 6, 9, 12], gamma=0.5)})
     elif name == 'CosineAnnealing':
+        batch_size = 4
+        total_dataset_size = 145177 * 0.98
+        t_max = int((total_dataset_size / batch_size) * max_epochs)
         scheduler.update(
-            {'scheduler': CosineAnnealingLR(optimizer, 181250, eta_min=1e-6)})
+            {'scheduler': CosineAnnealingLR(optimizer, t_max, eta_min=1e-6)})
     elif name == 'ExponentialLR':
         scheduler.update(
             {'scheduler': ExponentialLR(optimizer, 0.999992)})

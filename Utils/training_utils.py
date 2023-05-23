@@ -198,17 +198,19 @@ def calculate_rot_error_from_rotvec(batch: dict):
 
     batch.update({'ori_error': ori_error / len(batch['pred'])})
 
-def calculate_rot_error_from_class(batch: dict, bin_value):
+def calculate_rot_error_from_class(data: dict, bin_value, batch: dict = None):
+    if batch is None:
+        batch = data
     ori_error = 0
-    for i in range(len(batch['pred'])):
+    for i in range(len(data['pred'])):
         # print(batch['pred'][i].detach().cpu())
-        pred = np.argmax(batch['pred'][i].detach().cpu().numpy())
-        target = np.argmax(batch['label'][i].detach().cpu().numpy())
+        pred = np.argmax(data['pred'][i].detach().cpu().numpy())
+        target = np.argmax(data['label'][i].detach().cpu().numpy())
         error = np.abs(pred - target)
         _ori_error = error * bin_value
         ori_error += _ori_error
 
-    batch.update({'ori_error': ori_error / len(batch['pred'])})
+    batch.update({'ori_error': ori_error / len(data['pred'])})
 
 def calculate_rot_error_from_classreg(batch: dict):
     ori_error = 0

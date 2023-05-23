@@ -26,7 +26,7 @@ from Dataset.blender_dataset_class import BlenderDatasetClassification
 from Dataset.blender_dataset_1dof import BlenderDataset_1dof
 from Dataset.blender_dataset_1dof_reg import BlenderDataset_1dof_reg
 from Dataset.bd_1dof_clNreg import BlenderDataset_1dof_classNreg
-
+from Dataset.blender_dataset_4dof import BlenderDataset_4dof
 
 class BlenderDataModule(pl.LightningDataModule):
     """ 
@@ -82,6 +82,10 @@ class BlenderDataModule(pl.LightningDataModule):
             return BlenderDataset_1dof_reg(args.crop_margin, args.class_bins)
         elif modality == 4:
             return BlenderDataset_1dof_classNreg(args.crop_margin, args.class_bins)
+        elif modality == 5:
+            return BlenderDataset_4dof('class', args.crop_margin, args.class_bins)
+        elif modality == 6:
+            return BlenderDataset_4dof('reg', args.crop_margin, args.class_bins)
 
     def setup(self, stage=None):
         """
