@@ -43,14 +43,6 @@ def rgb2gray(rgb):
 
 @njit
 def pose_inv(pose):
-    """
-    Function used to convert a pose to an extrinsic matrix.
-    Args:
-        posevec: Position concatenated with a quaternion.
-    Returns:
-        T_OW: Extrinsic Matrix. This is a transformation that can be used to map a point in the world frame to the
-            object frame.
-    """
     R = pose[:3, :3]
 
     T = np.eye(4)
@@ -158,6 +150,13 @@ def get_keypoint_indices(img_size, coarse_factor=1):
     xx, yy = np.meshgrid(x, y)
     indices = np.concatenate((xx[..., None], yy[..., None]), axis=2)
     return indices.reshape((-1, 2))
+
+def get_segmented_keypoints(seg: np.ndarray):
+    x = np.arange(seg.shape[1], dtype=int)  # TODO should we have '+ 0.5' here?
+    y = np.arange(seg.shape[0], dtype=int)  # TODO should we have '+ 0.5' here?
+    xx, yy = np.meshgrid(x, y)
+    indices = np.concatenate((xx[seg][...,None], yy[seg][...,None]), axis=1)
+    return indices
 
 @njit
 def project_pointcloud(keypoints: np.ndarray,

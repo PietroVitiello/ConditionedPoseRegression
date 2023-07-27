@@ -11,6 +11,7 @@ if socket.gethostname() == 'pit-lab':
     # DATASET_DIR = Path("/home/pita/HDD/sdb/datasets/full_blender_dataset_so")
     ### Single Object Single Axis Rotation
     DATASET_DIR = Path("/home/pita/HDD/sdb/datasets/full_sar")
+    REALWORLD_DATA_DIR = Path("/home/pita/HDD/sdb/datasets/val_sar")
 elif socket.gethostname() == 'p-pit17':
     DATASET_DIR = Path("/home/pita/Documents/PhD/Aspanformer/clean_dataset")
 else:

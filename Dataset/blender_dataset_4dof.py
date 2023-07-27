@@ -50,7 +50,7 @@ class BlenderDataset_4dof(Dataset):
         self.scene_names = np.sort(glob.glob(os.path.join(self.dataset_dir, 'scene_*')))
 
     def __len__(self):
-        return len(self.scene_names)
+        return len(self.scene_names) * 2
 
     def load_scene(self, scene_filename) -> dict:
         with open(scene_filename, "rb") as data_file:
@@ -161,7 +161,8 @@ class BlenderDataset_4dof(Dataset):
         t_W0 = data["T_WO_frame_0"][:3,3]
         return delta_magnitude * 180/np.pi, target_position, t_W0, T_delta_cam
     
-    def get_rotation_label(self, angle):
+    def get_rotation_label(self, angle, flip:float = 1):
+        angle *= flip
         if self.label_type == 'class':
             angle += 45 #make sure the whole interval [-45, 45] is positive
             class_index = int(angle // (90/self.bin_number))
@@ -169,14 +170,15 @@ class BlenderDataset_4dof(Dataset):
             class_labels[class_index] = 1.0
             return class_labels
         elif self.label_type == 'reg':
-            return angle
+            return angle / 45
 
     def __getitem__(self, idx):
         # Check length of Dataset is respected
         # self.idx = np.random.randint(0,2)
-        self.idx = idx
-        if self.idx >= len(self):
+        if idx >= len(self):
             raise IndexError
+        self.idx = idx // 2
+        flip_object_pairs = (idx % 2)*-2 + 1  #1 if even, -1 if odd
         
         # scene_dir = os.path.join(self.dataset_dir, f"scene_{str(self.idx).zfill(7)}")
         # data = self.load_scene(scene_dir)
@@ -191,17 +193,20 @@ class BlenderDataset_4dof(Dataset):
                 self.project_pointclouds(crop_data)
                 rot_magnitude, target_position, t_w0, full_T_delta = self.get_transformation(data)
                 assert rot_magnitude < 45.1, "The rotation magnitude is actually above 45 degrees"
-                rot_labels = self.get_rotation_label(rot_magnitude)
+                rot_label = self.get_rotation_label(rot_magnitude, flip_object_pairs)
                 is_valid_scene = True
             except Exception as e:
                 logger.warning(f"[SCENE {self.idx}] The following exception was found: \n{e}")
                 # data = self.load_random_scene()
-                self.idx = np.random.randint(0, len(self))
+                idx = np.random.randint(0, len(self))
+                self.idx = idx // 2
 
         crop_data["rgb_0"] *= crop_data["seg_0"]
         crop_data["proj_0"] *= crop_data["seg_0"]
         crop_data["rgb_1"] *= crop_data["seg_1"]
         crop_data["proj_1"] *= crop_data["seg_1"]
+
+        T_WC = data["T_WC_opencv"]
 
         # print(crop_data["seg_0"].shape)
         # print(crop_data["rgb_0"][np.repeat(crop_data["seg_0"][None], 3, axis=0)])
@@ -271,20 +276,38 @@ class BlenderDataset_4dof(Dataset):
         else:
             data = {}
 
-        data.update({
-            'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
-            'vmap0': crop_data["proj_0"],   # (h, w)
-            'rgb1': crop_data["rgb_1"].astype(np.float32),
-            'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
-            'obj0_centre': t_w0.astype(np.float32),
-            'rot_label': rot_labels,
-            't_label': target_position.astype(np.float32),
-            'dataset_name': 'Blender',
-            'scene_id': self.idx,
-            'pair_id': 0,
-            'pair_names': (f"scene_{self.idx}_0",
-                           f"scene_{self.idx}_1")
-        })
+        if idx % 2 == 0:
+            data.update({
+                'rgb0': crop_data["rgb_0"].astype(np.float32),   # (1, h, w)
+                'vmap0': crop_data["proj_0"],   # (h, w)
+                'rgb1': crop_data["rgb_1"].astype(np.float32),
+                'vmap1': crop_data["proj_1"], # NOTE: maybe int32?
+                'obj0_centre': t_w0.astype(np.float32),
+                'rot_label': rot_label,
+                't_label': target_position.astype(np.float32),
+                'extr': T_WC,
+                'dataset_name': 'Blender',
+                'scene_id': self.idx,
+                'pair_id': 0,
+                'pair_names': (f"scene_{self.idx}_00",
+                            f"scene_{self.idx}_01")
+            })
+        else:
+            data.update({
+                'rgb0': crop_data["rgb_1"].astype(np.float32),   # (1, h, w)
+                'vmap0': crop_data["proj_1"],   # (h, w)
+                'rgb1': crop_data["rgb_0"].astype(np.float32),
+                'vmap1': crop_data["proj_0"], # NOTE: maybe int32?
+                'obj0_centre': target_position.astype(np.float32),
+                'rot_label': rot_label,
+                't_label': t_w0.astype(np.float32),
+                'extr': T_WC,
+                'dataset_name': 'Blender',
+                'scene_id': self.idx,
+                'pair_id': 1,
+                'pair_names': (f"scene_{self.idx}_10",
+                            f"scene_{self.idx}_11")
+            })
 
 
         return data
