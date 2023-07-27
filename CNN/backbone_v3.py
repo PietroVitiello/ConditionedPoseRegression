@@ -5,16 +5,34 @@ class ConvBlock(nn.Module):
     def __init__(self, ch_in: int, ch_out: int, downsample: bool=False) -> None:
         super().__init__()
         self.block = nn.Sequential(
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=3, padding=1),
             nn.InstanceNorm2d(num_features=ch_out),
-            nn.LeakyReLU(inplace=True),
-            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=3, padding=1)
+            nn.LeakyReLU(inplace=True)
         )
         self.downsample = None
         if downsample:
             self.downsample = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-            # self.downsample = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
 
     def forward(self, x: torch.Tensor):
+        # print("X:", x.shape)
+        x = self.block(x)
+        if self.downsample is not None:
+            x = self.downsample(x)
+        return x
+    
+class ConvBlock_noNorm(nn.Module):
+    def __init__(self, ch_in: int, ch_out: int, downsample: bool=False) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=3, padding=1),
+            nn.LeakyReLU(inplace=True)
+        )
+        self.downsample = None
+        if downsample:
+            self.downsample = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+    def forward(self, x: torch.Tensor):
+        # print("X:", x.shape)
         x = self.block(x)
         if self.downsample is not None:
             x = self.downsample(x)
@@ -58,23 +76,20 @@ class ResNet_Block(nn.Module):
             ConvBlock(ch_out, ch_out)
         )
         self.residual_layer = nn.Sequential(
-            # nn.InstanceNorm2d(num_features=ch_in),
-            # nn.LeakyReLU(inplace=True),
-            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1)
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
+            nn.InstanceNorm2d(num_features=ch_out)
         )
         self.downsample = None
         if downsample:
-            # self.downsample = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-            # self.downsample = nn.AvgPool2d(kernel_size=3, stride=2, padding=1)
             self.downsample = nn.AvgPool2d(kernel_size=2, stride=2)
+        self.final_activation = nn.SELU(inplace=True)
         
-
     def forward(self, x: torch.Tensor):
         out = self.block(x)
         res = self.residual_layer(x)
         if self.downsample is not None:
             res = self.downsample(res)
-        return out + res
+        return self.final_activation(out + res)
     
 class ResNet_Block_0(ResNet_Block):
     def __init__(self, ch_in: int, ch_out:int) -> None:
@@ -84,28 +99,64 @@ class ResNet_Block_2(ResNet_Block):
     def __init__(self, ch_in: int, ch_out:int) -> None:
         super().__init__(ch_in, ch_out, downsample=True)
 
+class ResNet_Block_2_later(nn.Module):
+    def __init__(self, ch_in: int, ch_out:int) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            ConvBlock(ch_in, ch_out, downsample=False),
+            ConvBlock_noNorm(ch_out, ch_out, downsample=True)
+        )
+        self.residual_layer = nn.Sequential(
+            nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
+            nn.InstanceNorm2d(num_features=ch_out)
+        )
+        self.downsample = nn.AvgPool2d(kernel_size=2, stride=2)
+        self.final_activation = nn.SELU(inplace=True)
+        
+    def forward(self, x: torch.Tensor):
+        out = self.block(x)
+        res = self.residual_layer(x)
+        res = self.downsample(res)
+        return self.final_activation(out + res)
+
+# class ResNet_Block_4(nn.Module):
+#     def __init__(self, ch_in: int, ch_out:int) -> None:
+#         super().__init__()
+#         self.block = nn.Sequential(
+#             ConvBlock(ch_in, ch_out, downsample=True),
+#             ConvBlock(ch_out, ch_out, downsample=True)
+#         )
+#         self.residual_layer = nn.Sequential(
+#             nn.Conv2d(in_channels=ch_in, out_channels=ch_out, kernel_size=1),
+#             nn.InstanceNorm2d(num_features=ch_out),
+#             nn.AvgPool2d(kernel_size=4, stride=4),
+#         )
+#         self.final_activation = nn.SELU(inplace=True)
+
+#     def forward(self, x: torch.Tensor):
+#         out = self.block(x)
+#         res = self.residual_layer(x)
+#         return self.final_activation(out + res)
+
 class ResNet_Encoder(nn.Module):
 
     def __init__(self) -> None:
         super(ResNet_Encoder, self).__init__()
         self.rgb_head = self.encoding_head()
         self.pos_head = self.encoding_head()
-        # self.fusion = Single_ResNet_Block(512, 256)
         self.fusion = ConvBlock(512, 256, downsample=False)
         self.resnet = self.resnet_end()
 
     def encoding_head(self):
         return nn.Sequential(
-            # nn.InstanceNorm2d(num_features=3),
-            nn.Conv2d(3, 128, kernel_size=1),
-            ResNet_Block_0(128, 128),
+            ResNet_Block_2(3, 128),
             ResNet_Block_2(128, 256)
         )
 
     def resnet_end(self):
         return nn.Sequential(
             ResNet_Block_2(256, 512),
-            ResNet_Block_2(512, 512),
+            ResNet_Block_0(512, 256),
         )
 
     def forward(self, rgb, vmap):

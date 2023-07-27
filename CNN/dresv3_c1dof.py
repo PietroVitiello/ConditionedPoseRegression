@@ -1,17 +1,19 @@
+import os
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
 
-from CNN.backbone import ResNet_Backbone, ConvBlock, ResNet_Block_2
+from CNN.backbone_v3 import ResNet_Encoder, ResNet_Block_2, ResNet_Block_2_later, ConvBlock
 
-class DenseResNet_Classification(nn.Module):
+class DRes_v3_RCl(nn.Module):
 
     def __init__(self, n_classes: int = 18) -> None:
-        super(DenseResNet_Classification, self).__init__()
+        super(DRes_v3_RCl, self).__init__()
 
-        self.encoder = ResNet_Backbone()
+        self.encoder = ResNet_Encoder()
         self.fusion = ConvBlock(512, 256, downsample=False)
-        # self.fusion = ConvBlock(256, 256, downsample=False)
         self.resnet = self.resnet_end()
 
         self.mlp1 = nn.Sequential(nn.Linear(in_features=512, out_features=256, bias=True),
@@ -21,32 +23,13 @@ class DenseResNet_Classification(nn.Module):
         self.mlp3 = nn.Sequential(nn.Linear(in_features=128, out_features=n_classes, bias=True),
                                  nn.Identity(inplace=True))
 
-        # self.mlp1 = nn.Sequential(nn.Linear(in_features=256, out_features=256, bias=True),
-        #                          nn.SELU(inplace=True))
-        # self.mlp2 = nn.Sequential(nn.Linear(in_features=256, out_features=128, bias=True),
-        #                          nn.SELU(inplace=True))
-        # self.mlp3 = nn.Sequential(nn.Linear(in_features=128, out_features=128, bias=True),
-        #                          nn.SELU(inplace=True))
-        # self.mlp4 = nn.Sequential(nn.Linear(in_features=128, out_features=128, bias=True),
-        #                          nn.SELU(inplace=True))
-        # self.mlp5 = nn.Sequential(nn.Linear(in_features=128, out_features=200, bias=True),
-        #                          nn.Softmax(dim=1))
-
-    #     self._init_weights()
-
-    # def _init_weights(self):
-    #     r"""Initiate parameters in the transformer model."""
-    #     for p in self.parameters():
-    #         if p.dim() > 1:
-    #             nn.init.xavier_uniform_(p)
-
     def resnet_end(self):
         return nn.Sequential(
             ResNet_Block_2(256, 512),
+            ResNet_Block_2(512, 512),
             ResNet_Block_2(512, 1024),
-            ResNet_Block_2(1024, 2048),
-            ResNet_Block_2(2048, 1024),
-            ResNet_Block_2(1024, 512)
+            ResNet_Block_2(1024, 1024),
+            ResNet_Block_2_later(1024, 512)
         )
 
     def forward(self, batch: dict) -> torch.Tensor:
@@ -60,18 +43,12 @@ class DenseResNet_Classification(nn.Module):
         out = torch.concat((encoded_live, encoded_bottleneck), dim=1)
         out = self.fusion(out)
         print(f"Fusion:\n{out[:,0,int(out.shape[2]/2),:]}\n")
-        print(f"Resnet: {self.resnet(out).shape}\n")
         out = self.resnet(out).squeeze(2).squeeze(2)
-        
-        # out = self.mlp1(out)
-        # out = self.mlp2(out)
-        # out = self.mlp3(out)
+        print(f"ResNet:\n{out}\n")
 
         out = self.mlp1(out)
         out = self.mlp2(out)
         out = self.mlp3(out)
-        # out = self.mlp4(out)
-        # out = self.mlp5(out)
 
         batch['pred'] = out
         return out
@@ -88,12 +65,8 @@ if __name__ == "__main__":
         "vmap1": rand_bottle,
     }
 
-    model = DenseResNet_Classification()
+    model = DRes_v3_RCl()
     print("Parameter cound: ", sum(p.numel() for p in model.parameters() if p.requires_grad))
     out = model(batch)
     print(out.shape)
     # print(out)
-
-
-
-
