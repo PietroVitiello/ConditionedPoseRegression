@@ -9,7 +9,9 @@ import numpy as np
 import pytorch_lightning as pl
 from matplotlib import pyplot as plt
 
-from losses import rotation_loss, rotvec_loss, cross_entropy_loss, MSE_loss, CE_MSE_loss, KL_Divergence, Loss_4Dof
+from losses import (rotation_loss, rotvec_loss, cross_entropy_loss, MSE_loss, CE_MSE_loss, KL_Divergence,
+                    Loss_4Dof, TranslationOnly_Loss, TranslationCentreResidual_Loss, ResidualTranslation_Loss,
+                    ResidualAuxTransl_Loss)
 from optimizers import build_optimizer, build_scheduler
 from profiler import PassThroughProfiler
 from Utils.training_utils import calculate_rot_error_from_matrix, calculate_rot_error_from_class, calculate_rot_error_from_classreg
@@ -27,7 +29,20 @@ from CNN.dres_class_reg_v1 import DRes_Class_N_Reg
 from CNN.dres_vertex_cv1 import DenseResNet_VertexMap_Classification
 from CNN.dres_colvertex_cv1 import DRNet_ColorVertexMap_Class
 from CNN.full_resnet_v1 import ResNet
+from CNN.dresv1_c4dof import DRes_v1_RCl_tReg
+from CNN.dresv2_c1dof import DRes_v2_RCl
 from CNN.dresv2_c4dof import DRes_v2_RCl_tReg
+from CNN.dresv3_c1dof import DRes_v3_RCl
+from CNN.dresv3_c4dof import DRes_v3_RCl_tReg
+
+from PointNet.simple_baseline_1 import Regress_Subtraction
+from PointNet.pnetv1_t import PointNetv1_tReg
+from PointNet.pnetv2_t import PointNetv2_tReg
+from PointNet.pnetv3_t import PointNetv3_tReg
+from PointNet.pnetv4_t import PointNetv4_tReg
+from PointNet.pnetv2_rot import PointNetv2_RCl
+from PointNet.pnetv2_rot_reg import PointNetv2_RReg
+from PointNet.pnetv1 import PointNetv1
 
 
 class PL_Model(pl.LightningModule):
@@ -88,6 +103,7 @@ class PL_Model(pl.LightningModule):
 
         self.train_step = 0
         self.val_step = 0
+        self.multiple_dloders = False
         self.train_loss = np.array([np.inf])
         self.train_ori_err = np.array([np.inf])
         self.train_transl_err = np.array([np.inf])
@@ -124,18 +140,18 @@ class PL_Model(pl.LightningModule):
         data.clear()
 
     def loss_choice(self, args):
-        batch_size = 4
-        total_dataset_size = 145177 * 0.98
+        batch_size = 6
+        total_dataset_size = 452884 * 0.98
         loss_final_update_epoch = 0.5
-        n_batches = 100*20 #int((total_dataset_size / batch_size) * loss_final_update_epoch)
+        n_batches = 200 * 50 #int((total_dataset_size / batch_size) * loss_final_update_epoch)
         print("\n\n\n[INFO] n_batches in kl divergence is fixd. Remember to Change!\n\n\n")
         if args.modality == 0:
             return rotation_loss()
-        elif args.modality == 1:
+        elif args.modality in [1, 11]:
             return cross_entropy_loss()
-        elif args.modality == 2:
+        elif args.modality in [2]:
             # return cross_entropy_loss()
-            return KL_Divergence(n_batches=n_batches, bacthes_per_step=100, n_classes=args.class_bins, initial_steps=5)
+            return KL_Divergence(n_batches=n_batches, bacthes_per_step=100, n_classes=args.class_bins, initial_steps=2)
         elif args.modality == 3:
             return MSE_loss()
         elif args.modality == 4:
@@ -143,6 +159,18 @@ class PL_Model(pl.LightningModule):
         elif args.modality == 5:
             return Loss_4Dof('class', kl_n_batches=n_batches, kl_bacthes_per_step=100, n_classes=args.class_bins, kl_initial_steps=5)
         elif args.modality == 6:
+            return Loss_4Dof('class', kl_n_batches=n_batches, kl_bacthes_per_step=100, n_classes=args.class_bins, kl_initial_steps=5)
+        elif args.modality == 7:
+            return TranslationOnly_Loss('reg', n_classes=args.class_bins)
+        elif args.modality == 8:
+            return TranslationCentreResidual_Loss('reg', n_classes=args.class_bins)
+        elif args.modality == 9:
+            return ResidualTranslation_Loss('reg', n_classes=args.class_bins)
+        elif args.modality == 10:
+            return ResidualAuxTransl_Loss('reg', n_classes=args.class_bins)
+        elif args.modality == 12:
+            return MSE_loss()
+        elif args.modality == 1000:
             return Loss_4Dof('reg', kl_n_batches=n_batches, kl_bacthes_per_step=100, n_classes=args.class_bins, kl_initial_steps=5)
 
     def model_choice(self, args):
@@ -178,12 +206,36 @@ class PL_Model(pl.LightningModule):
             return ResNet_Transformer_Cv2(args.class_bins)
         elif args.model_name == "deep_transf":
             return Deep_ResNet_Transformer()
+        elif args.model_name == "dresv1_c4":
+            return DRes_v1_RCl_tReg(args.class_bins)
+        elif args.model_name == "dresv2_c1":
+            return DRes_v2_RCl(args.class_bins)
         elif args.model_name == "dresv2_c4":
             return DRes_v2_RCl_tReg(args.class_bins)
+        elif args.model_name == "dresv3_c1":
+            return DRes_v3_RCl(args.class_bins)
+        elif args.model_name == "dresv3_c4":
+            return DRes_v3_RCl_tReg(args.class_bins)
+        elif args.model_name == "simple_t":
+            return Regress_Subtraction(only_translation=True)
+        elif args.model_name == "pnetv1_t":
+            return PointNetv1_tReg(only_translation=True)
+        elif args.model_name == "pnetv2_t":
+            return PointNetv2_tReg(only_translation=True)
+        elif args.model_name == "pnetv3_t":
+            return PointNetv3_tReg(only_translation=True)
+        elif args.model_name == "pnetv4_t":
+            return PointNetv4_tReg(only_translation=True)
+        elif args.model_name == "pnetv2_rot":
+            return PointNetv2_RCl(args.class_bins)
+        elif args.model_name == "pnetv2_rot_reg":
+            return PointNetv2_RReg()
+        elif args.model_name == "pnet_v1":
+            return PointNetv1(args.class_bins)
         else:
             raise Exception("The chosen model is not supported")
         
-    def calculate_pose_error(self, batch):
+    def calculate_pose_error(self, batch: dict):
         if self.modality == 0:
             return calculate_rot_error_from_matrix(batch)
         elif self.modality == 1:
@@ -192,9 +244,14 @@ class PL_Model(pl.LightningModule):
             return calculate_rot_error_from_class(batch, 90/self.class_bins)
         elif self.modality in [3, 4]:
             return calculate_rot_error_from_classreg(batch)
-        elif self.modality == 5:
+        elif self.modality in [5, 6, 11]:
             data = {'pred': batch['rot_pred'], 'label': batch['rot_label']}
             return calculate_rot_error_from_class(data, 90/self.class_bins, batch)
+        elif self.modality in [7, 8, 9, 10]:
+            batch.update({'ori_error': 0})
+        elif self.modality == 12:
+            data = {'pred': batch['rot_pred'], 'label': batch['rot_label']}
+            return calculate_rot_error_from_classreg(data, 90/self.class_bins, batch)
         
     def configure_optimizers(self):
         # FIXME: The scheduler did not work properly when `--resume_from_checkpoint`
@@ -231,20 +288,29 @@ class PL_Model(pl.LightningModule):
         with self.profiler.profile("Compute losses"):
             self.loss(batch)
 
-        # print(f"\nBatch outputs:{batch['pred']}")
-        # print(f"Batch outputs:{batch['label']}")
-        # outputs_batch = torch.argmax(batch['pred'].detach(), dim=1)
-        # labels_batch = torch.argmax(batch['label'].detach(), dim=1)
-        # print(f"\nBatch outputs: {outputs_batch}")
-        # print(f"Batch labels: {labels_batch}")
-        # print(f"Difference: {torch.abs(outputs_batch - labels_batch)}")
-        outputs_batch = torch.argmax(batch['rot_pred'].detach(), dim=1)
-        labels_batch = torch.argmax(batch['rot_label'].detach(), dim=1)
-        print(f"\nBatch outputs: {outputs_batch}")
-        print(f"Batch labels: {labels_batch}")
-        print(f"Difference: {torch.abs(outputs_batch - labels_batch)}")
-        # print(f"\nBatch loss: {batch['loss']}\n\n")
-        print("\n\n")
+        if self.modality == 2:
+            # print(f"\nBatch outputs:{batch['pred']}")
+            # print(f"Batch outputs:{batch['label']}")
+            outputs_batch = torch.argmax(batch['pred'].detach(), dim=1)
+            labels_batch = torch.argmax(batch['label'].detach(), dim=1)
+            print(f"\nBatch outputs: {outputs_batch}")
+            print(f"Batch labels: {labels_batch}")
+            print(f"Difference: {torch.abs(outputs_batch - labels_batch)}")
+            print(f"\nBatch loss: {batch['loss']}\n\n")
+        elif self.modality in [5, 6, 11]:
+            outputs_batch = torch.argmax(batch['rot_pred'].detach(), dim=1)
+            labels_batch = torch.argmax(batch['rot_label'].detach(), dim=1)
+            print(f"\nBatch outputs: {outputs_batch}")
+            print(f"Batch labels: {labels_batch}")
+            print(f"Difference: {torch.abs(outputs_batch - labels_batch)}")
+            print("\n\n")
+        elif self.modality == 12:
+            outputs_batch = batch['rot_pred'].detach() * 45
+            labels_batch = batch['rot_label'].detach() * 45
+            print(f"\nBatch outputs: {outputs_batch}")
+            print(f"Batch labels: {labels_batch}")
+            print(f"Difference: {torch.abs(outputs_batch - labels_batch)}")
+            print("\n\n")
     
     def on_train_epoch_start(self) -> None:
         self.train_loss = np.zeros(1)
@@ -286,20 +352,41 @@ class PL_Model(pl.LightningModule):
     def on_train_batch_end(self, outputs, batch, batch_idx: int, dataloader_idx: int) -> None:
         outputs.clear()
     
-    def validation_step(self, batch, batch_idx):
+    # def validation_step(self, batch, batch_idx):
+    #     self._trainval_inference(batch)
+    #     self.calculate_pose_error(batch)
+    #     outputs_ = [batch['loss'].detach().cpu(),
+    #                 batch['ori_error']]
+    #     if 't_error' in batch.keys():
+    #         outputs_.append(batch['t_error'])
+    #     return outputs_
+
+    # def validation_step(self, batch, batch_idx, dataloader_idx):
+    def validation_step(self, batch, batch_idx, *args):
+        # if "dataloader_idx" in kwargs.keys():
+        #     dataloader_idx = kwargs["dataloader_idx"]
+        # else:
+        #     dataloader_idx = 0
+        if len(args) == 1:
+            dataloader_idx = args[0]
+        else:
+            dataloader_idx = 0
         self._trainval_inference(batch)
         self.calculate_pose_error(batch)
         outputs_ = [batch['loss'].detach().cpu(),
                     batch['ori_error']]
-        if 't_error' in batch.keys():
-            outputs_.append(batch['t_error'])
+        if dataloader_idx == 0:
+            if 't_error' in batch.keys():
+                outputs_.append(batch['t_error'])
+        if dataloader_idx > 0:
+            self.multiple_dloders = True
         return outputs_
-        
+    
     def validation_epoch_end(self, outputs):
-        # handle multiple validation sets
-        # print('outputs', outputs)
-        multi_outputs = np.array([np.array(output) for output in outputs])
-        # print(multi_outputs)
+        if not self.multiple_dloders:
+            outputs = [outputs]
+
+        multi_outputs = np.array([np.array(output) for output in outputs[0]])
         losses = multi_outputs[:,0]
         ori_errors = multi_outputs[:,1]
 
@@ -313,8 +400,42 @@ class PL_Model(pl.LightningModule):
 
         self.log("val_loss", val_data["val_rotation_loss"])
         self.log("val_ori_error", val_data["val_ori_error"])
+
+        if self.multiple_dloders:
+            multi_outputs = np.array([np.array(output) for output in outputs[1]])
+            losses = multi_outputs[:,0]
+            ori_errors = multi_outputs[:,1]
+
+            val_data.update({"real_rotation_loss": np.mean(losses),
+                             "real_ori_error": np.mean(ori_errors),
+                             "real_ori_std": np.std(ori_errors)})
+            
+            self.log("real_loss", val_data["real_rotation_loss"])
+            self.log("real_ori_error", val_data["real_ori_error"])
+
         if self.trainer.global_rank == 0 and self.use_wandb:
             self.wandb_log_epochs(val_data, stage='val')
+        
+    # def validation_epoch_end(self, outputs):
+    #     # handle multiple validation sets
+    #     # print('outputs', outputs)
+    #     multi_outputs = np.array([np.array(output) for output in outputs])
+    #     # print(multi_outputs)
+    #     losses = multi_outputs[:,0]
+    #     ori_errors = multi_outputs[:,1]
+
+    #     val_data = {"val_rotation_loss": np.mean(losses),
+    #                 "val_ori_error": np.mean(ori_errors),
+    #                 "val_ori_std": np.std(ori_errors)}
+
+    #     if multi_outputs.shape[1] == 3:
+    #         t_errors = multi_outputs[:,2]
+    #         val_data.update({"val_trsl_error": np.mean(t_errors)})
+
+    #     self.log("val_loss", val_data["val_rotation_loss"])
+    #     self.log("val_ori_error", val_data["val_ori_error"])
+    #     if self.trainer.global_rank == 0 and self.use_wandb:
+    #         self.wandb_log_epochs(val_data, stage='val')
 
     def test_step(self, batch, batch_idx):
         return 0

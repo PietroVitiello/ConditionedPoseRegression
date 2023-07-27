@@ -27,14 +27,14 @@ def build_scheduler(name, optimizer, max_epochs):
 
     if name == "plateau":
         scheduler.update(
-            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.85, patience=100, min_lr=1e-6, verbose=True),
+            {'scheduler': ReduceLROnPlateau(optimizer, mode='min', factor=0.91, patience=300, min_lr=0.5e-6, verbose=True),
              'monitor': 'training_window_loss'})
     elif name == 'MultiStepLR':
         scheduler.update(
             {'scheduler': MultiStepLR(optimizer, [3, 6, 9, 12], gamma=0.5)})
     elif name == 'CosineAnnealing':
         batch_size = 4
-        total_dataset_size = 145177 * 0.98
+        total_dataset_size = 452884 * 0.98
         t_max = int((total_dataset_size / batch_size) * max_epochs)
         scheduler.update(
             {'scheduler': CosineAnnealingLR(optimizer, t_max, eta_min=1e-6)})

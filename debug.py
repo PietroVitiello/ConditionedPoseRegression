@@ -152,52 +152,8 @@ def main():
         save_dir='logs', name=args.run_name, default_hp_metric=False)
     ckpt_dir = Path(logger.log_dir) / 'checkpoints'
 
-    # Callbacks
-    # TODO: update ModelCheckpoint to monitor multiple metrics
-    training_validation_interval = 3000
-    train_w_loss_callback = ModelCheckpoint(monitor='training_window_loss', verbose=True, save_top_k=3, mode='min',
-                                            save_last=False,
-                                            every_n_train_steps=150,
-                                            dirpath=str(ckpt_dir),
-                                            filename='{epoch}-{step}-{training_window_loss:.4f}')
-    # train_last_loss_callback = ModelCheckpoint(monitor='training_last_loss', verbose=True, save_top_k=3, mode='min',
-    #                                            save_last=False,
-    #                                            every_n_train_steps=150,
-    #                                            dirpath=str(ckpt_dir),
-    #                                            filename='{epoch}-{step}-{training_last_loss:.4f}')
-    val_loss_callback = ModelCheckpoint(monitor='val_loss', verbose=True, save_top_k=3, mode='min',
-                                       save_last=True,
-                                       every_n_train_steps=training_validation_interval,
-                                       dirpath=str(ckpt_dir),
-                                       filename='{epoch}-{val_loss:.4f}')
-    val_ori_callback = ModelCheckpoint(monitor='val_ori_error', verbose=True, save_top_k=3, mode='min',
-                                       save_last=True,
-                                       every_n_train_steps=training_validation_interval,
-                                       dirpath=str(ckpt_dir),
-                                       filename='{epoch}-{val_ori_error:.4f}')
-
     lr_monitor = LearningRateMonitor(logging_interval='step')
     callbacks = [lr_monitor]
-    if not args.disable_ckpt:
-        # training
-        callbacks.append(train_w_loss_callback)
-        # validation
-        callbacks.append(val_loss_callback)
-        callbacks.append(val_ori_callback)
-        # real
-        if data_module.real_dataset is not None:
-            real_loss_callback = ModelCheckpoint(monitor='real_loss', verbose=True, save_top_k=3, mode='min',
-                                                save_last=True,
-                                                every_n_train_steps=training_validation_interval,
-                                                dirpath=str(ckpt_dir),
-                                                filename='{epoch}-{real_loss:.4f}')
-            real_ori_callback = ModelCheckpoint(monitor='real_ori_error', verbose=True, save_top_k=3, mode='min',
-                                                save_last=True,
-                                                every_n_train_steps=training_validation_interval,
-                                                dirpath=str(ckpt_dir),
-                                                filename='{epoch}-{real_ori_error:.4f}')
-            callbacks.append(real_loss_callback)
-            callbacks.append(real_ori_callback)
 
     # Lightning Trainer
     trainer = pl.Trainer.from_argparse_args(
@@ -213,7 +169,6 @@ def main():
         reload_dataloaders_every_epoch=False,  # avoid repeated samples!
         weights_summary='full',
         profiler=profiler,
-        val_check_interval=training_validation_interval
         )
     loguru_logger.info(f"Trainer initialized!")
     loguru_logger.info(f"Start training!")
